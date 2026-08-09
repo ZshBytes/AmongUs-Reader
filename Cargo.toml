@@ -1,0 +1,39 @@
+[package]
+name = "among-reader-by-szuwer"
+version = "0.1.0"
+edition = "2021"
+description = "Among us reader by szuwer"
+
+[dependencies]
+egui = "0.30"
+egui_glow = "0.30"
+egui-winit = "0.30"
+glow = "0.16"
+glutin = "0.32"
+glutin-winit = "0.5"
+parking_lot = "0.12"
+raw-window-handle = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.32"
+thiserror = "2"
+toml = "0.8"
+winit = "0.30"
+
+[dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

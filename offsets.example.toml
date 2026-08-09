@@ -1,0 +1,72 @@
+# Copy this file to offsets.toml and fill in values from YOUR game build.
+# Offsets change every Among Us patch — never copy offsets from another person
+# without verifying against your own Il2CppDumper output.
+
+[process]
+executable_name = "Among Us.exe"
+module_name = "GameAssembly.dll"
+
+[il2cpp]
+# x64 default is usually 0xB8. For 32-bit Among Us builds, Il2CppClass.static_fields is usually 0x5C.
+static_fields = 0xB8
+
+[static_pointers]
+# script.json → search "PlayerControl_TypeInfo" / "AmongUsClient_TypeInfo" / "GameData_TypeInfo"
+# Use the hex Address field (RVA into GameAssembly.dll).
+player_control_type_info = 0xDEADBEEF
+among_us_client_type_info = 0xDEADBEEF
+game_data_type_info = 0xDEADBEEF
+
+[static_fields]
+# Offset of each static field inside the class static-fields blob (from dump.cs / il2cpp.h).
+player_control_all_player_controls = 0x0
+among_us_client_instance = 0x0
+game_data_instance = 0x0
+
+[among_us_client]
+# AmongUsClient / InnerNetClient → GameState (int32)
+game_state = 0x5C
+
+[game_states]
+active = [2]
+
+[list]
+items = 0x10
+size = 0x18
+
+[array]
+first_element = 0x20
+element_size = 8
+
+[player_control]
+# PlayerControl → NetworkedPlayerInfo* (backing field for get_Data)
+data = 0x78
+
+[networked_player_info]
+# NetworkedPlayerInfo field offsets from dump.cs
+player_name = 0x58
+color_id = 0x70
+role_type = 0x68
+disconnected = 0x80
+is_dead = 0x81
+
+[mono_string]
+length = 0x10
+chars = 0x14
+
+[validation]
+max_players = 15
+min_player_name_len = 1
+max_player_name_len = 20
+min_color_id = 0
+max_color_id = 25
+valid_role_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+
+[runtime]
+poll_interval_ms = 150
+
+[overlay]
+width = 400
+height = 600
+position_x = 20
+position_y = 20

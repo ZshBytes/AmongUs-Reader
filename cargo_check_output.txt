@@ -1,0 +1,426 @@
+﻿cargo :     Checking among-us-overlay v0.1.0 (C:\Users\szuwer\Documents\coding\
+rust\Among Us - external)
+At line:1 char:65
++ ... \Documents\coding\rust\Among Us - external"; cargo check 2>&1 | Out-F ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking am... Us - external) 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+error: unknown start of token: \
+  --> src\memory\process.rs:15:3
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |   ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:15:9
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |         ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:15:16
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |                ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:15:26
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |                          ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:15:33
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |                                 ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:15:38
+   |
+15 | C:\Users\szuwer\Documents\coding\rust\Among US - external>cargo run
+   |                                      ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:16:17
+   |
+16 | warning: method `clear` is never used
+   |                 ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+16 - warning: method `clear` is never used
+16 + warning: method 'clear` is never used
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:16:23
+   |
+16 | warning: method `clear` is never used
+   |                       ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+16 - warning: method `clear` is never used
+16 + warning: method `clear' is never used
+   |
+
+error: unknown start of token: \
+  --> src\memory\process.rs:17:10
+   |
+17 |   --> src\game\state.rs:35:12
+   |          ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:17:15
+   |
+17 |   --> src\game\state.rs:35:12
+   |               ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:25:12
+   |
+25 |    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |            ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+25 -    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+25 +    = note: '#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:25:31
+   |
+25 |    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |                               ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+25 -    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+25 +    = note: `#[warn(dead_code)]' (part of `#[warn(unused)]`) on by default
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:25:42
+   |
+25 |    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |                                          ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+25 -    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+25 +    = note: `#[warn(dead_code)]` (part of '#[warn(unused)]`) on by default
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:25:58
+   |
+25 |    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   |                                                          ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+25 -    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+25 +    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]') on by default
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:27:16
+   |
+27 | warning: field `pid` is never read
+   |                ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+27 - warning: field `pid` is never read
+27 + warning: field 'pid` is never read
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:27:20
+   |
+27 | warning: field `pid` is never read
+   |                    ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+27 - warning: field `pid` is never read
+27 + warning: field `pid' is never read
+   |
+
+error: unknown start of token: \
+  --> src\memory\process.rs:28:10
+   |
+28 |   --> src\memory\process.rs:19:5
+   |          ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:28:17
+   |
+28 |   --> src\memory\process.rs:19:5
+   |                 ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:35:12
+   |
+35 |    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |            ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+35 -    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+35 +    = note: 'ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:35:26
+   |
+35 |    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |                          ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+35 -    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+35 +    = note: `ProcessHandle' has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:35:61
+   |
+35 |    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |                                                             ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+35 -    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+35 +    = note: `ProcessHandle` has a derived impl for the trait 'Debug`, but t
+his is intentionally ignored during dead code analysis
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:35:67
+   |
+35 |    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+   |                                                                   ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+35 -    = note: `ProcessHandle` has a derived impl for the trait `Debug`, but t
+his is intentionally ignored during dead code analysis
+35 +    = note: `ProcessHandle` has a derived impl for the trait `Debug', but t
+his is intentionally ignored during dead code analysis
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:37:17
+   |
+37 | warning: method `pid` is never used
+   |                 ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+37 - warning: method `pid` is never used
+37 + warning: method 'pid` is never used
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:37:21
+   |
+37 | warning: method `pid` is never used
+   |                     ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+37 - warning: method `pid` is never used
+37 + warning: method `pid' is never used
+   |
+
+error: unknown start of token: \
+  --> src\memory\process.rs:38:10
+   |
+38 |   --> src\memory\process.rs:60:12
+   |          ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:38:17
+   |
+38 |   --> src\memory\process.rs:60:12
+   |                 ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:46:17
+   |
+46 | warning: method `raw_handle` is never used
+   |                 ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+46 - warning: method `raw_handle` is never used
+46 + warning: method 'raw_handle` is never used
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:46:28
+   |
+46 | warning: method `raw_handle` is never used
+   |                            ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+46 - warning: method `raw_handle` is never used
+46 + warning: method `raw_handle' is never used
+   |
+
+error: unknown start of token: \
+  --> src\memory\process.rs:47:11
+   |
+47 |    --> src\memory\process.rs:104:19
+   |           ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:47:18
+   |
+47 |    --> src\memory\process.rs:104:19
+   |                  ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:54:10
+   |
+54 | warning: `among-us-overlay` (bin "among-us-overlay") generated 4 warnings
+   |          ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+54 - warning: `among-us-overlay` (bin "among-us-overlay") generated 4 warnings
+54 + warning: 'among-us-overlay` (bin "among-us-overlay") generated 4 warnings
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:54:27
+   |
+54 | warning: `among-us-overlay` (bin "among-us-overlay") generated 4 warnings
+   |                           ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+54 - warning: `among-us-overlay` (bin "among-us-overlay") generated 4 warnings
+54 + warning: `among-us-overlay' (bin "among-us-overlay") generated 4 warnings
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:55:14
+   |
+55 |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+   |              ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+55 -     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+55 +     Finished 'dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:55:18
+   |
+55 |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+   |                  ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+55 -     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+55 +     Finished `dev' profile [unoptimized + debuginfo] target(s) in 0.21s
+   |
+
+error: unknown start of token: `
+  --> src\memory\process.rs:56:14
+   |
+56 |      Running `target\debug\among-us-overlay.exe`
+   |              ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+56 -      Running `target\debug\among-us-overlay.exe`
+56 +      Running 'target\debug\among-us-overlay.exe`
+   |
+
+error: unknown start of token: \
+  --> src\memory\process.rs:56:21
+   |
+56 |      Running `target\debug\among-us-overlay.exe`
+   |                     ^
+
+error: unknown start of token: \
+  --> src\memory\process.rs:56:27
+   |
+56 |      Running `target\debug\among-us-overlay.exe`
+   |                           ^
+
+error: unknown start of token: `
+  --> src\memory\process.rs:56:48
+   |
+56 |      Running `target\debug\among-us-overlay.exe`
+   |                                                ^
+   |
+help: Unicode character '`' (Grave Accent) looks like ''' (Single Quote), but i
+t is not
+   |
+56 -      Running `target\debug\among-us-overlay.exe`
+56 +      Running `target\debug\among-us-overlay.exe'
+   |
+
+error: this file contains an unclosed delimiter
+   --> src\memory\process.rs:626:3
+    |
+ 19 | 24 | impl SharedGameState {
+    |                           - unclosed delimiter
+...
+ 22 | 35 |     pub fn clear(&self) {
+    |                              - unclosed delimiter
+...
+ 30 | 18 | pub struct ProcessHandle {
+    |                               - unclosed delimiter
+...
+ 40 | 26 | impl ProcessHandle {
+    |                         - unclosed delimiter
+...
+ 43 | 60 |     pub fn pid(&self) -> u32 {
+    |                                   - unclosed delimiter
+...
+626 | }
+    |  ^
+
+error: could not compile `among-us-overlay` (bin "among-us-overlay") due to 39 
+previous errors

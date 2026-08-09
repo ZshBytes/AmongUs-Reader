@@ -1,0 +1,80 @@
+# Among Us IL2CPP offsets — update after each game patch.
+#
+# How to find new values (per machine / version):
+# 1. Run Il2CppDumper on GameAssembly.dll + global-metadata.dat from the game folder.
+# 2. Open script.json and search for "<Class>_TypeInfo" (e.g. PlayerControl_TypeInfo).
+#    The "Address" field is the static TypeInfo offset (hex) — use as type_info below.
+# 3. Open dump.cs / il2cpp.h for instance field offsets on each class.
+# 4. Il2CppClass.static_fields on x64 is almost always 0xB8 — confirm in il2cpp.h if needed.
+#
+# Static singleton resolution chain:
+#   GameAssembly + type_info -> Il2CppClass*
+#   class + il2cpp_class.static_fields -> static fields block
+#   static_fields + static_field_offset -> live instance pointer
+
+[process]
+executable_name = "Among Us.exe"
+module_name = "GameAssembly.dll"
+
+[il2cpp]
+# x64 default is usually 0xB8. For 32-bit Among Us builds, Il2CppClass.static_fields is usually 0x5C.
+static_fields = 0xB8
+
+[static_pointers]
+# Replace with your dump's TypeInfo offsets (script.json "Address" values).
+player_control_type_info = 0x0
+among_us_client_type_info = 0x0
+game_data_type_info = 0x0
+
+[static_fields]
+# Offsets inside each class static-fields blob (often 0x0 for first static field).
+player_control_all_player_controls = 0x0
+among_us_client_instance = 0x0
+game_data_instance = 0x0
+
+[among_us_client]
+game_state = 0x5C
+
+[game_states]
+# InnerNetClient.GameStates::Joined and Started should both count as an active match.
+active = [1, 2]
+
+[list]
+items = 0x10
+size = 0x18
+
+[array]
+first_element = 0x20
+element_size = 8
+
+[player_control]
+data = 0x58
+
+[networked_player_info]
+player_name = 0x20
+color_id = 0x8
+role_type = 0x38
+disconnected = 0x48
+is_dead = 0x54
+
+[mono_string]
+length = 0x10
+chars = 0x14
+
+[validation]
+max_players = 15
+min_player_name_len = 1
+max_player_name_len = 20
+min_color_id = 0
+max_color_id = 25
+# AmongUs.GameOptions.RoleTypes — extend when new roles ship.
+valid_role_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+
+[runtime]
+poll_interval_ms = 150
+
+[overlay]
+width = 540
+height = 680
+position_x = 20
+position_y = 20
