@@ -2,7 +2,7 @@
 
 A Rust-based tool for **Among Us**.
 
-## 📦 Installation
+##  Installation
 
 ### From Source
 
