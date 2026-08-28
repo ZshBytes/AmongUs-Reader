@@ -26,7 +26,7 @@ impl Default for OverlayStatus {
             players: Vec::new(),
             status_message: String::new(),
             last_update_ms: 0,
-            stream_proof: true,
+            stream_proof: false,
         }
     }
 }
@@ -40,6 +40,43 @@ pub struct SharedGameState {
 impl SharedGameState {
     pub fn apply_snapshot(&self, snapshot: &ScanSnapshot) {
         let mut state = self.inner.write();
+
+        let players_changed = state.players.len() != snapshot.players.len()
+            || state.players.iter().zip(&snapshot.players).any(|(a, b)| a.name != b.name || a.role != b.role || a.is_dead != b.is_dead);
+        let status_changed = state.connected != snapshot.connected
+            || state.game_state != snapshot.game_state
+            || state.status_message != snapshot.status_message;
+
+        if status_changed || players_changed {
+            if !snapshot.connected {
+                eprintln!("[scanner] {}", snapshot.status_message);
+            } else if snapshot.players.is_empty() {
+                if status_changed {
+                    let msg = if snapshot.status_message.is_empty() {
+                        "Connected to process".to_string()
+                    } else {
+                        snapshot.status_message.clone()
+                    };
+                    eprintln!("[scanner] Connected (GameState={}) | {}", snapshot.game_state, msg);
+                }
+            } else {
+                let player_names: Vec<String> = snapshot
+                    .players
+                    .iter()
+                    .map(|p| {
+                        let dead = if p.is_dead { " [DEAD]" } else { "" };
+                        format!("{} ({:?}{})", p.name, p.role, dead)
+                    })
+                    .collect();
+                eprintln!(
+                    "[scanner] Players ({}) [GameState={}]: {}",
+                    snapshot.players.len(),
+                    snapshot.game_state,
+                    player_names.join(", ")
+                );
+            }
+        }
+
         state.connected = snapshot.connected;
         state.in_active_match = snapshot.in_active_match;
         state.game_state = snapshot.game_state;

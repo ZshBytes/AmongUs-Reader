@@ -24,7 +24,7 @@ use winit::window::{Window, WindowAttributes, WindowId};
 use crate::config::OverlayConfig;
 use crate::game::state::SharedGameState;
 use crate::overlay::render::{draw_overlay, OverlayAction};
-use crate::overlay::window::{apply_stream_proof_styles, set_stream_proof, SystemTray};
+use crate::overlay::window::{apply_stream_proof_styles, set_stream_proof, set_window_visible, SystemTray};
 
 pub struct OverlayApp;
 
@@ -52,18 +52,66 @@ struct OverlayHandler {
     gl: Option<GlBundle>,
     last_frame: Instant,
     last_generation: u64,
+    window_visible: bool,
+    toggle_key_down: bool,
+    vk_code: i32,
+    is_editing_key: bool,
+    key_buffer: String,
 }
 
 impl OverlayHandler {
     fn new(config: OverlayConfig, shared: Arc<SharedGameState>) -> Self {
+        let vk_code = config.toggle_key_vk();
+        let key_buffer = config.toggle_key.clone();
         Self {
             config,
             shared,
             gl: None,
             last_frame: Instant::now(),
             last_generation: 0,
+            window_visible: true,
+            toggle_key_down: false,
+            vk_code,
+            is_editing_key: false,
+            key_buffer,
         }
     }
+
+    fn check_hotkey(&mut self) {
+        if self.is_editing_key {
+            return;
+        }
+        let key_state = unsafe {
+            windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(self.vk_code)
+        };
+        let is_down = (key_state as u16 & 0x8000) != 0;
+        if is_down && !self.toggle_key_down {
+            self.toggle_key_down = true;
+            self.window_visible = !self.window_visible;
+            if let Some(bundle) = self.gl.as_ref() {
+                set_window_visible(&bundle.window, self.window_visible);
+            }
+        } else if !is_down && self.toggle_key_down {
+            self.toggle_key_down = false;
+        }
+    }
+
+fn save_key_setting(key: &str) {
+    // Try updating offsets.toml if it exists
+    if let Ok(content) = std::fs::read_to_string("offsets.toml") {
+        let lines: Vec<String> = content
+            .lines()
+            .map(|line| {
+                if line.trim_start().starts_with("toggle_key") {
+                    format!("toggle_key = \"{key}\"")
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect();
+        let _ = std::fs::write("offsets.toml", lines.join("\r\n"));
+    }
+}
 
     fn init(&mut self, event_loop: &ActiveEventLoop) {
         if self.gl.is_some() {
@@ -165,6 +213,10 @@ impl OverlayHandler {
     }
 
     fn render(&mut self) {
+        if !self.window_visible {
+            return;
+        }
+
         let bundle = match self.gl.as_mut() {
             Some(g) => g,
             None => return,
@@ -173,11 +225,26 @@ impl OverlayHandler {
         let window = &bundle.window;
         let raw_input = bundle.egui_winit.take_egui_input(window);
         let game = self.shared.snapshot();
-        let (full_output, action) = draw_overlay(bundle.egui_winit.egui_ctx(), raw_input, &game);
+        let (full_output, action) = draw_overlay(
+            bundle.egui_winit.egui_ctx(),
+            raw_input,
+            &game,
+            &self.config.toggle_key,
+            &mut self.is_editing_key,
+            &mut self.key_buffer,
+        );
 
-        if matches!(action, OverlayAction::ToggleStreamProof) {
-            let new_val = self.shared.toggle_stream_proof();
-            set_stream_proof(window, new_val);
+        match action {
+            OverlayAction::ToggleStreamProof => {
+                let new_val = self.shared.toggle_stream_proof();
+                set_stream_proof(window, new_val);
+            }
+            OverlayAction::ChangeToggleKey(new_key) => {
+                self.config.toggle_key = new_key.clone();
+                self.vk_code = self.config.toggle_key_vk();
+                Self::save_key_setting(&new_key);
+            }
+            OverlayAction::None => {}
         }
 
         bundle
@@ -229,7 +296,7 @@ impl ApplicationHandler for OverlayHandler {
             false
         };
 
-        if repaint {
+        if repaint && self.window_visible {
             self.render();
         }
 
@@ -254,6 +321,13 @@ impl ApplicationHandler for OverlayHandler {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        self.check_hotkey();
+
+        if !self.window_visible {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            return;
+        }
+
         let current_gen = self.shared.generation();
         let gen_changed = current_gen != self.last_generation;
 

@@ -15,6 +15,7 @@ pub enum RoleType {
     Noisemaker,
     Detective,
     Viper,
+    Judge,
     Unknown(u16),
 }
 
@@ -39,6 +40,7 @@ impl RoleType {
             11 => RoleType::Tracker,
             12 => RoleType::Detective,
             18 => RoleType::Viper,
+            19 => RoleType::Judge,
             other => RoleType::Unknown(other),
         })
     }
@@ -71,6 +73,7 @@ impl fmt::Display for RoleType {
             RoleType::Noisemaker => "Noisemaker",
             RoleType::Detective => "Detective",
             RoleType::Viper => "Viper",
+            RoleType::Judge => "Judge",
             RoleType::Unknown(id) => return write!(f, "Unknown({id})"),
         };
         f.write_str(label)

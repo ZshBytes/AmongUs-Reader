@@ -203,22 +203,75 @@ pub struct OverlayConfig {
     pub height: u32,
     pub position_x: i32,
     pub position_y: i32,
+    #[serde(default = "default_toggle_key")]
+    pub toggle_key: String,
+}
+
+fn default_toggle_key() -> String {
+    "Insert".to_string()
+}
+
+impl OverlayConfig {
+    pub fn toggle_key_vk(&self) -> i32 {
+        parse_vk_key(&self.toggle_key)
+    }
+}
+
+pub fn parse_vk_key(name: &str) -> i32 {
+    match name.trim().to_uppercase().as_str() {
+        "INSERT" | "INS" => 0x2D, // VK_INSERT
+        "DELETE" | "DEL" => 0x2E, // VK_DELETE
+        "HOME" => 0x24,           // VK_HOME
+        "END" => 0x23,            // VK_END
+        "PAGEUP" | "PGUP" | "PRIOR" => 0x21, // VK_PRIOR
+        "PAGEDOWN" | "PGDN" | "NEXT" => 0x22, // VK_NEXT
+        "F1" => 0x70,
+        "F2" => 0x71,
+        "F3" => 0x72,
+        "F4" => 0x73,
+        "F5" => 0x74,
+        "F6" => 0x75,
+        "F7" => 0x76,
+        "F8" => 0x77,
+        "F9" => 0x78,
+        "F10" => 0x79,
+        "F11" => 0x7A,
+        "F12" => 0x7B,
+        "TAB" => 0x09,
+        "CAPSLOCK" | "CAPS" => 0x14,
+        "ESCAPE" | "ESC" => 0x1B,
+        "SPACE" => 0x20,
+        "BACKSPACE" | "BACK" => 0x08,
+        s if s.len() == 1 => {
+            let c = s.chars().next().unwrap();
+            if c.is_ascii_alphanumeric() {
+                c as i32
+            } else {
+                0x2D
+            }
+        }
+        _ => 0x2D,
+    }
 }
 
 fn discover_dump_sources(base: &Path) -> DumpConfig {
     let mut search_dirs = Vec::new();
-    let mut pending_dirs = vec![base.to_path_buf()];
-
+    let mut pending_dirs = std::collections::VecDeque::new();
+    pending_dirs.push_back(base.to_path_buf());
+    pending_dirs.push_back(base.join("config"));
+    pending_dirs.push_back(base.join("src"));
+    pending_dirs.push_back(base.join("src").join("config"));
     if let Ok(cwd) = std::env::current_dir() {
-        pending_dirs.push(cwd);
+        if cwd != base {
+            pending_dirs.push_back(cwd);
+        }
     }
-    pending_dirs.push(base.join("config"));
-    pending_dirs.push(base.join("src"));
-    pending_dirs.push(base.join("src/config"));
-    pending_dirs.push(base.parent().unwrap_or(base).to_path_buf());
+    if let Some(parent) = base.parent() {
+        pending_dirs.push_back(parent.to_path_buf());
+    }
 
     let mut visited = HashSet::new();
-    while let Some(dir) = pending_dirs.pop() {
+    while let Some(dir) = pending_dirs.pop_front() {
         if !visited.insert(dir.clone()) {
             continue;
         }
@@ -232,7 +285,7 @@ fn discover_dump_sources(base: &Path) -> DumpConfig {
             for entry in entries.flatten() {
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_dir() {
-                        pending_dirs.push(entry.path());
+                        pending_dirs.push_back(entry.path());
                     }
                 }
             }
@@ -243,16 +296,19 @@ fn discover_dump_sources(base: &Path) -> DumpConfig {
         search_dirs.push(Path::new(&game_dir).to_path_buf());
     }
 
-    let steam_paths = [
-        r"C:\Program Files (x86)\Steam\steamapps\common\Among Us",
-        r"C:\Program Files\Steam\steamapps\common\Among Us",
-        r"D:\SteamLibrary\steamapps\common\Among Us",
-        r"C:\Users\szuwer\Documents\coding\rust\Among US - external",
-        r"C:\Users\szuwer\Documents",
-        r"C:\Users\szuwer\Desktop",
-    ];
-    for path in steam_paths {
-        search_dirs.push(Path::new(path).to_path_buf());
+    let drives = ["C", "D", "E", "F", "G", "H"];
+    for drive in drives {
+        let steam_paths = [
+            format!(r"{drive}:\Steam\steamapps\common\Among Us"),
+            format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\Among Us"),
+            format!(r"{drive}:\Program Files\Steam\steamapps\common\Among Us"),
+            format!(r"{drive}:\SteamLibrary\steamapps\common\Among Us"),
+            format!(r"{drive}:\Epic Games\AmongUs"),
+            format!(r"{drive}:\XboxGames\Among Us\Content"),
+        ];
+        for path in steam_paths {
+            search_dirs.push(Path::new(&path).to_path_buf());
+        }
     }
 
     let pick = |filename: &str| -> Option<String> {
@@ -282,14 +338,27 @@ fn discover_dump_sources(base: &Path) -> DumpConfig {
 }
 
 impl Offsets {
+    pub const DEFAULT_CONFIG_TOML: &'static str = include_str!("../../offsets.toml");
+
     pub fn load(path: impl AsRef<Path>) -> Result<(Self, Vec<String>), ConfigError> {
         let path = path.as_ref();
-        let text = fs::read_to_string(path).map_err(ConfigError::Io)?;
+        let (text, base) = if path.exists() {
+            let content = fs::read_to_string(path).map_err(ConfigError::Io)?;
+            let b = path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+            (content, b)
+        } else {
+            let b = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .unwrap_or_else(|| Path::new(".").to_path_buf());
+            (Self::DEFAULT_CONFIG_TOML.to_string(), b)
+        };
+
         let mut offsets: Offsets = toml::from_str(&text).map_err(ConfigError::Parse)?;
         offsets.validate()?;
 
         let mut notes = Vec::new();
-        let base = path.parent().unwrap_or_else(|| Path::new("."));
+        let base = base.as_path();
 
         let mut dump = DumpConfig {
             script_json: offsets
@@ -375,13 +444,16 @@ mod tests {
     #[test]
     fn discover_dump_sources_finds_nested_files() {
         let temp = std::env::temp_dir().join(format!("among-us-offsets-{}", std::process::id()));
-        let nested = temp.join("src/config");
+        let nested = temp.join("src").join("config");
         std::fs::create_dir_all(&nested).unwrap();
         let script = nested.join("script.json");
         std::fs::write(&script, r#"[]"#).unwrap();
 
         let dump = discover_dump_sources(&temp);
-        assert_eq!(dump.script_json.as_deref(), Some(script.to_str().unwrap()));
+        assert_eq!(
+            dump.script_json.as_deref().map(Path::new).map(std::path::Path::to_path_buf),
+            Some(script.to_path_buf())
+        );
 
         std::fs::remove_file(script).unwrap();
         std::fs::remove_dir_all(temp).unwrap();

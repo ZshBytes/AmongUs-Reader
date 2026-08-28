@@ -9,8 +9,13 @@ pub fn read_mono_string(
     layout: &MonoStringLayout,
     validation: &ValidationConfig,
 ) -> Result<String, MemoryError> {
-    if string_ptr == 0 {
-        return Err(MemoryError::InvalidPointer(0));
+    if string_ptr == 0 || !reader.process().is_valid_pointer(string_ptr) {
+        return Err(MemoryError::InvalidPointer(string_ptr));
+    }
+
+    let klass_ptr = reader.read_pointer(string_ptr)?;
+    if !reader.process().is_valid_pointer(klass_ptr) {
+        return Err(MemoryError::InvalidString);
     }
 
     let pointer_size = reader.process().pointer_size();
@@ -33,7 +38,15 @@ pub fn read_mono_string(
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect::<Vec<_>>();
 
-    if units.iter().any(|&u| u < 0x20 || u == 0xFFFD) {
+    // Reject unprintable control characters (< 0x20, except common whitespace) and
+    // invalid UTF-16 lone surrogates (0xD800..=0xDFFF). Everything else — including
+    // CJK, diacritics, emoji surrogates, etc. — is allowed.
+    if units.iter().any(|&u| {
+        (u < 0x0020)
+            || (u >= 0xD800 && u <= 0xDFFF)
+            || u == 0xFFFE
+            || u == 0xFFFF
+    }) {
         return Err(MemoryError::InvalidString);
     }
 

@@ -38,6 +38,7 @@ impl<'a> MemoryReader<'a> {
         Ok(u64::from_le_bytes(buf))
     }
 
+    #[allow(dead_code)]
     pub fn read_bool(&self, address: u64) -> Result<bool, MemoryError> {
         Ok(self.read_u8(address)? != 0)
     }

@@ -1,5 +1,6 @@
 // Author: @szuwer
 // Among Us Live External Overlay
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -38,30 +39,39 @@ fn spawn_scanner(offsets: Arc<Offsets>, shared: Arc<SharedGameState>) {
             let mut scanner = GameScanner::new(offsets);
 
             loop {
-                match ProcessHandle::attach(
-                    &scanner.offsets().process.executable_name,
-                    &scanner.offsets().process.module_name,
-                ) {
-                    Ok(handle) => {
-                        scanner.set_process(handle);
-                        match scanner.scan() {
-                            Ok(snapshot) => shared.apply_snapshot(&snapshot),
-                            Err(err) => shared.apply_snapshot(&ScanSnapshot {
-                                connected: true,
+                if !scanner.has_process() {
+                    match ProcessHandle::attach(
+                        &scanner.offsets().process.executable_name,
+                        &scanner.offsets().process.module_name,
+                    ) {
+                        Ok(handle) => scanner.set_process(handle),
+                        Err(err) => {
+                            shared.apply_snapshot(&ScanSnapshot {
+                                connected: false,
                                 in_active_match: false,
                                 game_state: -1,
                                 players: Vec::new(),
-                                status_message: format!("Scan failed: {err}"),
-                            }),
+                                status_message: format!("Waiting for Among Us... ({err})"),
+                            });
+                            thread::sleep(interval);
+                            continue;
                         }
                     }
-                    Err(err) => shared.apply_snapshot(&ScanSnapshot {
-                        connected: false,
-                        in_active_match: false,
-                        game_state: -1,
-                        players: Vec::new(),
-                        status_message: format!("Waiting for Among Us... ({err})"),
-                    }),
+                }
+
+                match scanner.scan() {
+                    Ok(snapshot) => shared.apply_snapshot(&snapshot),
+                    Err(err) => {
+                        // Only clear the process if the process handle itself is invalid/closed
+                        eprintln!("[scan] transient scan error: {err}");
+                        shared.apply_snapshot(&ScanSnapshot {
+                            connected: true,
+                            in_active_match: false,
+                            game_state: -1,
+                            players: Vec::new(),
+                            status_message: format!("Scanning: {err}"),
+                        });
+                    }
                 }
                 thread::sleep(interval);
             }

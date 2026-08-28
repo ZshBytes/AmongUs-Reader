@@ -6,16 +6,20 @@ use egui::{Color32, FullOutput, RawInput, RichText, ScrollArea, Ui};
 use crate::game::role::{color_name, color_rgb};
 use crate::game::state::OverlayStatus;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlayAction {
     None,
     ToggleStreamProof,
+    ChangeToggleKey(String),
 }
 
 pub fn draw_overlay(
     ctx: &egui::Context,
     raw_input: RawInput,
     state: &OverlayStatus,
+    toggle_key: &str,
+    is_editing_key: &mut bool,
+    key_buffer: &mut String,
 ) -> (FullOutput, OverlayAction) {
     ctx.request_repaint();
     let mut action = OverlayAction::None;
@@ -28,7 +32,7 @@ pub fn draw_overlay(
                     .rounding(8.0),
             )
             .show(ctx, |ui| {
-                draw_header(ui, state, &mut action);
+                draw_header(ui, state, toggle_key, is_editing_key, key_buffer, &mut action);
                 ui.separator();
                 if !state.players.is_empty() {
                     draw_player_list(ui, state);
@@ -40,10 +44,17 @@ pub fn draw_overlay(
     (output, action)
 }
 
-fn draw_header(ui: &mut Ui, state: &OverlayStatus, action: &mut OverlayAction) {
+fn draw_header(
+    ui: &mut Ui,
+    state: &OverlayStatus,
+    toggle_key: &str,
+    is_editing_key: &mut bool,
+    key_buffer: &mut String,
+    action: &mut OverlayAction,
+) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("Among Us Live Overlay (@szuwer)")
+            RichText::new("Among Us External cheat (made with <3 by szuwer)")
                 .strong()
                 .size(15.0),
         );
@@ -58,6 +69,42 @@ fn draw_header(ui: &mut Ui, state: &OverlayStatus, action: &mut OverlayAction) {
 
         if ui.button(RichText::new(sp_text).small().color(sp_color)).clicked() {
             *action = OverlayAction::ToggleStreamProof;
+        }
+
+        ui.add_space(6.0);
+
+        if *is_editing_key {
+            let response = ui.add(
+                egui::TextEdit::singleline(key_buffer)
+                    .desired_width(70.0)
+                    .hint_text("Key...")
+            );
+            if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let trimmed = key_buffer.trim().to_string();
+                if !trimmed.is_empty() {
+                    *action = OverlayAction::ChangeToggleKey(trimmed);
+                }
+                *is_editing_key = false;
+            }
+            if ui.button("OK").clicked() {
+                let trimmed = key_buffer.trim().to_string();
+                if !trimmed.is_empty() {
+                    *action = OverlayAction::ChangeToggleKey(trimmed);
+                }
+                *is_editing_key = false;
+            }
+        } else {
+            let btn_text = format!("[{toggle_key}: Hide/Show]");
+            let btn = ui.button(
+                RichText::new(btn_text)
+                    .small()
+                    .color(Color32::from_rgb(170, 190, 230)),
+            );
+            if btn.clicked() {
+                *is_editing_key = true;
+                *key_buffer = toggle_key.to_string();
+            }
+            btn.on_hover_text("Click to customize the toggle key (e.g. Delete, F1-F12, Home, End)");
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -77,12 +124,18 @@ fn draw_header(ui: &mut Ui, state: &OverlayStatus, action: &mut OverlayAction) {
 }
 
 fn draw_idle(ui: &mut Ui, state: &OverlayStatus) {
-    let message = if state.status_message.is_empty() {
-        "No active match — player cache flushed.".to_string()
+    let message = if !state.connected {
+        if state.status_message.is_empty() {
+            "Waiting for Among Us to launch...".to_string()
+        } else {
+            state.status_message.clone()
+        }
+    } else if !state.status_message.is_empty() {
+        format!("Connected to Among Us — {}", state.status_message)
     } else {
-        state.status_message.clone()
+        "Connected to Among Us — Waiting for players (join a lobby or match)".to_string()
     };
-    ui.label(RichText::new(message).italics().color(Color32::GRAY));
+    ui.label(RichText::new(message).italics().color(Color32::from_rgb(220, 200, 100)));
 }
 
 fn draw_player_list(ui: &mut Ui, state: &OverlayStatus) {

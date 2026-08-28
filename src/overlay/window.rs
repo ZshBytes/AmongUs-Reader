@@ -17,8 +17,7 @@ pub fn apply_stream_proof_styles(window: &Window) {
     let hwnd = window_hwnd(window);
 
     unsafe {
-        SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
-            .expect("SetWindowDisplayAffinity failed");
+        let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
 
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         // WS_EX_TOOLWINDOW hides window from taskbar, ~WS_EX_APPWINDOW ensures taskbar exclusion
@@ -53,6 +52,28 @@ pub fn set_stream_proof(window: &Window, enabled: bool) {
     };
     unsafe {
         let _ = SetWindowDisplayAffinity(hwnd, affinity);
+    }
+}
+
+/// Dynamically show or hide the overlay window on keybind.
+pub fn set_window_visible(window: &Window, visible: bool) {
+    let hwnd = window_hwnd(window);
+    unsafe {
+        if visible {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+            let _ = UpdateWindow(hwnd);
+        } else {
+            let _ = ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE);
+        }
     }
 }
 

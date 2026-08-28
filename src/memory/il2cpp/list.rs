@@ -69,10 +69,6 @@ fn try_read_list_object(
     };
     let size = reader.read_i32(size_addr)?;
 
-    eprintln!(
-        "[list] list_ptr=0x{list_ptr:X} candidate items_offset=0x{items_offset:X} size_offset=0x{size_offset:X} items_ptr_addr=0x{items_ptr_addr:X} items_ptr_raw=0x{items_ptr_raw:X} size_addr=0x{size_addr:X} size={size}"
-    );
-
     if items_ptr_raw != 0
         && reader.process().is_valid_pointer(items_ptr_raw)
         && size >= 0
@@ -114,7 +110,7 @@ pub fn read_pointer_list(
         ),
     ];
 
-    for (items_offset, size_offset, label) in candidate_offsets {
+    for (items_offset, size_offset, _label) in candidate_offsets {
         match try_read_list_object(
             reader,
             list_ptr,
@@ -123,44 +119,24 @@ pub fn read_pointer_list(
             size_offset,
         ) {
             Ok(Some((items_ptr_raw, size))) => {
-                eprintln!(
-                    "[list] resolved list object at 0x{list_ptr:X} using {label} items_offset=0x{items_offset:X} size_offset=0x{size_offset:X} items_ptr_raw=0x{items_ptr_raw:X} size={size}",
-                );
                 if size == 0 {
                     return Ok(Vec::new());
                 }
                 return read_array_elements(reader, items_ptr_raw, array_layout, size);
             }
-            Ok(None) => {
-                eprintln!(
-                    "[list] list object candidate failed validation for {label}: list_ptr=0x{list_ptr:X} items_offset=0x{items_offset:X} size_offset=0x{size_offset:X}",
-                );
-            }
-            Err(err) => {
-                eprintln!(
-                    "[list] failed to read list object for {label} at list_ptr=0x{list_ptr:X}: {err}",
-                );
-            }
+            Ok(None) => {}
+            Err(_) => {}
         }
     }
 
     match try_read_pointer_array(reader, list_ptr, array_layout, max_entries) {
         Ok(Some(array_items)) => {
-            eprintln!("[list] list_ptr appears to be an array object, using array fallback");
             return Ok(array_items);
         }
-        Ok(None) => {
-            eprintln!("[list] array fallback validation failed for list_ptr=0x{list_ptr:X}");
-        }
-        Err(err) => {
-            eprintln!("[list] failed to read list_ptr as array object at 0x{list_ptr:X}: {err}");
-        }
+        Ok(None) => {}
+        Err(_) => {}
     }
 
-    let mut raw_bytes = [0u8; 32];
-    if reader.read_bytes(list_ptr, &mut raw_bytes).is_ok() {
-        eprintln!("[list] raw list_ptr bytes=({list_ptr:#X}) {:02X?}", raw_bytes);
-    }
     Err(MemoryError::InvalidPointer(list_ptr))
 }
 
@@ -172,12 +148,6 @@ fn read_array_elements(
 ) -> Result<Vec<u64>, MemoryError> {
     let pointer_size = reader.process().pointer_size();
     let mut result = Vec::with_capacity(size as usize);
-
-    let header_bytes = if pointer_size == 4 { 16 } else { 24 };
-    let mut header_buf = vec![0u8; header_bytes];
-    if reader.read_bytes(array_ptr, &mut header_buf).is_ok() {
-        eprintln!("[list] array header=({array_ptr:#X}) {:02X?}", header_buf);
-    }
 
     for index in 0..size as usize {
         let element_offset = array_layout.first_element_offset(pointer_size)
@@ -194,23 +164,10 @@ fn read_array_elements(
             None
         };
 
-        eprintln!(
-            "[list] element_index={} element_addr=0x{element_ptr_addr:X} raw={:?} parsed={:?}",
-            index,
-            element_buf,
-            element_val,
-        );
-
         if let Some(ptr) = element_val {
-            if ptr != 0 {
-                if reader.process().is_valid_pointer(ptr) {
-                    result.push(ptr);
-                } else {
-                    eprintln!("[list] invalid element pointer value at 0x{element_ptr_addr:X}: 0x{ptr:X}");
-                }
+            if ptr != 0 && reader.process().is_valid_pointer(ptr) {
+                result.push(ptr);
             }
-        } else {
-            eprintln!("[list] failed to read element bytes at 0x{element_ptr_addr:X}");
         }
     }
 
