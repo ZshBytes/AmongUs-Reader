@@ -1,1 +1,14 @@
 /target/
+*.pdb
+*.exe
+dump.cs
+il2cpp.h
+script.json
+stringliteral.json
+DummyDll/
+**/dump.cs
+**/il2cpp.h
+**/script.json
+**/stringliteral.json
+**/config.json
+
