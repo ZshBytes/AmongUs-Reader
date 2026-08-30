@@ -20,6 +20,8 @@ pub struct Offsets {
     pub array: ArrayLayout,
     pub player_control: PlayerControlFields,
     pub networked_player_info: NetworkedPlayerInfoFields,
+    #[serde(default)]
+    pub custom_network_transform: CustomNetworkTransformFields,
     pub mono_string: MonoStringLayout,
     pub validation: ValidationConfig,
     pub runtime: RuntimeConfig,
@@ -156,6 +158,31 @@ pub struct NetworkedPlayerInfoFields {
     pub role_type: u64,
     pub disconnected: u64,
     pub is_dead: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CustomNetworkTransformFields {
+    #[serde(default = "default_net_transform")]
+    pub net_transform: u64,
+    #[serde(default = "default_last_position")]
+    pub last_position: u64,
+}
+
+fn default_net_transform() -> u64 {
+    0x98
+}
+
+fn default_last_position() -> u64 {
+    0x44
+}
+
+impl Default for CustomNetworkTransformFields {
+    fn default() -> Self {
+        Self {
+            net_transform: default_net_transform(),
+            last_position: default_last_position(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -57,6 +57,7 @@ struct OverlayHandler {
     vk_code: i32,
     is_editing_key: bool,
     key_buffer: String,
+    radar_state: crate::overlay::render::RadarState,
 }
 
 impl OverlayHandler {
@@ -74,6 +75,7 @@ impl OverlayHandler {
             vk_code,
             is_editing_key: false,
             key_buffer,
+            radar_state: crate::overlay::render::RadarState::default(),
         }
     }
 
@@ -130,7 +132,7 @@ fn save_key_setting(key: &str) {
             ))
             .with_transparent(true)
             .with_resizable(true)
-            .with_decorations(true);
+            .with_decorations(false);
 
         let template = ConfigTemplateBuilder::new()
             .with_alpha_size(8)
@@ -232,9 +234,16 @@ fn save_key_setting(key: &str) {
             &self.config.toggle_key,
             &mut self.is_editing_key,
             &mut self.key_buffer,
+            &mut self.radar_state,
         );
 
         match action {
+            OverlayAction::Close => {
+                std::process::exit(0);
+            }
+            OverlayAction::DragWindow => {
+                let _ = window.drag_window();
+            }
             OverlayAction::ToggleStreamProof => {
                 let new_val = self.shared.toggle_stream_proof();
                 set_stream_proof(window, new_val);

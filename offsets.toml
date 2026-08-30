@@ -57,6 +57,10 @@ role_type = 0x38
 disconnected = 0x48
 is_dead = 0x54
 
+[custom_network_transform]
+net_transform = 0x98
+last_position = 0x44
+
 [mono_string]
 length = 0x10
 chars = 0x14
@@ -68,10 +72,10 @@ max_player_name_len = 20
 min_color_id = 0
 max_color_id = 25
 # AmongUs.GameOptions.RoleTypes — extend when new roles ship.
-valid_role_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+valid_role_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
 
 [runtime]
-poll_interval_ms = 150
+poll_interval_ms = 40
 
 [overlay]
 width = 540

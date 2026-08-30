@@ -21,7 +21,7 @@ pub enum RoleType {
 
 impl RoleType {
     pub fn from_id(id: u16, valid: &std::collections::HashSet<u16>) -> Option<Self> {
-        if !valid.contains(&id) {
+        if !valid.contains(&id) && id > 64 {
             return None;
         }
 

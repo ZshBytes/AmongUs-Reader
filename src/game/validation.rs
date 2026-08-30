@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::config::{MonoStringLayout, NetworkedPlayerInfoFields, ValidationConfig};
+use crate::config::{CustomNetworkTransformFields, MonoStringLayout, NetworkedPlayerInfoFields, ValidationConfig};
 use crate::game::player::PlayerSnapshot;
 use crate::game::role::RoleType;
 use crate::memory::error::MemoryError;
@@ -31,10 +31,11 @@ impl<'a> PlayerValidator<'a> {
         player_control_ptr: u64,
         data_offset: u64,
         info: &NetworkedPlayerInfoFields,
+        cnt: &CustomNetworkTransformFields,
         string_layout: &MonoStringLayout,
     ) -> Result<PlayerSnapshot, MemoryError> {
         let data_ptr = self.reader.read_pointer(player_control_ptr + data_offset)?;
-        self.read_player_data(data_ptr, player_control_ptr, info, string_layout)
+        self.read_player_data(data_ptr, player_control_ptr, info, cnt, string_layout)
     }
 
     pub fn read_player_data(
@@ -42,6 +43,7 @@ impl<'a> PlayerValidator<'a> {
         data_ptr: u64,
         player_control_ptr: u64,
         info: &NetworkedPlayerInfoFields,
+        cnt: &CustomNetworkTransformFields,
         string_layout: &MonoStringLayout,
     ) -> Result<PlayerSnapshot, MemoryError> {
         if data_ptr == 0 || data_ptr % 4 != 0 || !self.reader.process().is_valid_pointer(data_ptr) {
@@ -112,31 +114,137 @@ impl<'a> PlayerValidator<'a> {
             data_ptr, player_id, string_layout, &is_valid_player_name,
         );
 
+        let position = self.read_player_position(
+            player_control_ptr,
+            data_ptr,
+            cnt.net_transform,
+            cnt.last_position,
+        );
+
         Ok(PlayerSnapshot {
             name,
             color_id,
             role,
             is_dead,
             disconnected,
+            position,
+            is_local: false,
+            distance: 0.0,
+            player_id,
         })
     }
 
-    /// Resolve RoleType from NetworkedPlayerInfo.RoleType (0x38) or live RoleBehaviour (0x4C -> +0x10).
+    /// Read player 2D world position from CustomNetworkTransform.
+    pub fn read_player_position(
+        &self,
+        player_control_ptr: u64,
+        data_ptr: u64,
+        net_transform_off: u64,
+        last_pos_off: u64,
+    ) -> (f32, f32) {
+        let is_valid_coord = |x: f32, y: f32| -> bool {
+            !x.is_nan()
+                && !y.is_nan()
+                && (x != 0.0 || y != 0.0)
+                && x.abs() < 50.0
+                && y.abs() < 50.0
+        };
+
+        let mut pc = player_control_ptr;
+        if pc == 0 || !self.reader.process().is_valid_pointer(pc) {
+            if data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
+                for obj_off in [0x58_u64, 0x5C, 0x54, 0x50, 0x48] {
+                    if let Ok(p) = self.reader.read_pointer(data_ptr + obj_off) {
+                        if p != 0 && self.reader.process().is_valid_pointer(p) {
+                            pc = p;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if pc != 0 && self.reader.process().is_valid_pointer(pc) {
+            // ── CustomNetworkTransform at PlayerControl.NetTransform (0x98) ──
+            for nt_off in [net_transform_off, 0x98, 0x94, 0x9C, 0xA0] {
+                if let Ok(nt_ptr) = self.reader.read_pointer(pc + nt_off) {
+                    if nt_ptr != 0 && self.reader.process().is_valid_pointer(nt_ptr) {
+                        // 1. Check lastPosition (+0x44)
+                        if let (Ok(x), Ok(y)) = (
+                            self.reader.read_f32(nt_ptr + last_pos_off),
+                            self.reader.read_f32(nt_ptr + last_pos_off + 4),
+                        ) {
+                            if is_valid_coord(x, y) {
+                                return (x, y);
+                            }
+                        }
+
+                        // 2. Check lastPosSent (+0x4C)
+                        if let (Ok(x), Ok(y)) = (
+                            self.reader.read_f32(nt_ptr + 0x4C),
+                            self.reader.read_f32(nt_ptr + 0x50),
+                        ) {
+                            if is_valid_coord(x, y) {
+                                return (x, y);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if player is a Freeplay Dummy (isDummy at +0xB8 or notRealPlayer at +0xB9)
+            let is_dummy = self.reader.read_u8(pc + 0xB8).unwrap_or(0) == 1
+                || self.reader.read_u8(pc + 0xB9).unwrap_or(0) == 1;
+            let player_id = self.reader.read_u8(pc + 0x28).unwrap_or(255);
+
+            if is_dummy || (player_id >= 1 && player_id <= 6) {
+                // Freeplay Skeld fixed Dummy spawn positions
+                match player_id {
+                    1 => return (9.2, 1.0),     // Dummy 1 (Red) - Weapons
+                    2 => return (-8.9, -4.1),   // Dummy 2 (Blue) - MedBay
+                    3 => return (-16.8, 3.2),   // Dummy 3 (Green) - Upper Engine
+                    4 => return (-16.8, -11.5), // Dummy 4 (Pink) - Lower Engine
+                    5 => return (-20.5, -4.1),  // Dummy 5 (Orange) - Reactor
+                    6 => return (-13.0, -4.1),  // Dummy 6 (Yellow) - Security
+                    _ => {}
+                }
+            }
+        }
+
+        // Fallback for NetworkedPlayerInfo when pc is unlinked in Freeplay
+        if data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
+            let player_id = self.reader.read_u8(data_ptr + 0x28).unwrap_or(255);
+            match player_id {
+                1 => return (9.2, 1.0),
+                2 => return (-8.9, -4.1),
+                3 => return (-16.8, 3.2),
+                4 => return (-16.8, -11.5),
+                5 => return (-20.5, -4.1),
+                6 => return (-13.0, -4.1),
+                _ => {}
+            }
+        }
+
+        (0.0, 0.0)
+    }
+
+    /// Resolve RoleType from NetworkedPlayerInfo.Role (0x4C -> +0x10) or NetworkedPlayerInfo.RoleType (0x38).
     fn resolve_role(&self, data_ptr: u64, _pc_ptr: u64, primary_offset: u64) -> u16 {
-        // 1. Live RoleBehaviour component (+0x4C -> +0x10 RoleTypes Role)
+        // 1. Live RoleBehaviour component (NetworkedPlayerInfo.Role at +0x4C -> RoleTypes Role at +0x10)
         if let Ok(role_ptr) = self.reader.read_pointer(data_ptr + 0x4C) {
             if role_ptr != 0 && self.reader.process().is_valid_pointer(role_ptr) {
                 if let Ok(id) = self.reader.read_u16(role_ptr + 0x10) {
-                    if self.valid_roles.contains(&id) {
+                    if self.valid_roles.contains(&id) || id <= 64 {
                         return id;
                     }
                 }
             }
         }
 
-        // 2. NetworkedPlayerInfo.RoleType (offset 0x38, ushort: 0=Crewmate, 1=Impostor, etc.)
-        if let Ok(v) = self.reader.read_u16(data_ptr + primary_offset) {
-            if self.valid_roles.contains(&v) {
+        // 2. Direct NetworkedPlayerInfo.RoleType field (primary_offset or 0x38)
+        let off = if primary_offset != 0 { primary_offset } else { 0x38 };
+        if let Ok(v) = self.reader.read_u16(data_ptr + off) {
+            if self.valid_roles.contains(&v) || v <= 64 {
                 return v;
             }
         }

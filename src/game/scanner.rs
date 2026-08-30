@@ -146,76 +146,115 @@ impl GameScanner {
 
         let mut players = Vec::new();
 
-        // 1. PlayerControl.AllPlayerControls — fastest, most reliable when in a match
+        let cnt = &self.offsets.custom_network_transform;
+
+        // ── 1. Read AllPlayerControls (fastest access to live PlayerControl objects) ──
+        let mut pc_map = std::collections::HashMap::<u8, u64>::new();
+        let mut pos_map = std::collections::HashMap::<u8, (f32, f32)>::new();
+
         if let Some(list_ptr) = all_controls_list {
             if let Ok(ptrs) = read_pointer_list(
                 &reader, list_ptr,
                 &self.offsets.list, &self.offsets.array,
                 self.offsets.validation.max_players,
             ) {
-                for player_ptr in ptrs {
-                    if let Ok(player) = validator.read_player(
-                        player_ptr,
-                        self.offsets.player_control.data,
-                        &self.offsets.networked_player_info,
-                        &self.offsets.mono_string,
-                    ) {
-                        if !player.disconnected {
-                            players.push(player);
+                for pc_ptr in ptrs {
+                    if pc_ptr != 0 && reader.process().is_valid_pointer(pc_ptr) {
+                        let pid = reader.read_u8(pc_ptr + 0x28).unwrap_or(255);
+                        let pos = validator.read_player_position(
+                            pc_ptr, 0, cnt.net_transform, cnt.last_position,
+                        );
+                        if pid <= 15 {
+                            pc_map.insert(pid, pc_ptr);
+                            if pos != (0.0, 0.0) {
+                                pos_map.insert(pid, pos);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // 2. GameData.Instance.AllPlayers — NetworkedPlayerInfo list (always populated in lobby & match)
-        if players.is_empty() {
-            if let Some(game_data) = game_data_ptr {
-                for list_field_off in [0x10_u64, 0x14] {
-                    if let Ok(ap_list_ptr) = reader.read_pointer(game_data + list_field_off) {
-                        if ap_list_ptr == 0 || !reader.process().is_valid_pointer(ap_list_ptr) {
-                            continue;
-                        }
-                        if let Ok(info_ptrs) = read_pointer_list(
-                            &reader, ap_list_ptr,
-                            &self.offsets.list, &self.offsets.array,
-                            self.offsets.validation.max_players,
-                        ) {
-                            for info_ptr in info_ptrs {
-                                // Try to resolve through NetworkedPlayerInfo._object (PlayerControl*)
-                                let mut resolved = false;
-                                for obj_off in [0x58_u64, 0x5C, 0x54, 0x50, 0x48, 0x4C] {
-                                    if let Ok(pc_ptr) = reader.read_pointer(info_ptr + obj_off) {
-                                        if pc_ptr != 0 && reader.process().is_valid_pointer(pc_ptr) {
-                                            if let Ok(player) = validator.read_player(
-                                                pc_ptr,
-                                                self.offsets.player_control.data,
-                                                &self.offsets.networked_player_info,
-                                                &self.offsets.mono_string,
-                                            ) {
-                                                if !player.disconnected {
-                                                    players.push(player);
-                                                }
-                                                resolved = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                // Direct NetworkedPlayerInfo fallback
-                                if !resolved {
-                                    if let Ok(player) = validator.read_player_data(
-                                        info_ptr, 0,
-                                        &self.offsets.networked_player_info,
-                                        &self.offsets.mono_string,
-                                    ) {
-                                        if !player.disconnected {
-                                            players.push(player);
-                                        }
+        // ── 2. Read GameData.Instance.AllPlayers (full metadata for every player & dummy) ──
+        if let Some(game_data) = game_data_ptr {
+            for list_field_off in [0x10_u64, 0x14] {
+                if let Ok(ap_list_ptr) = reader.read_pointer(game_data + list_field_off) {
+                    if ap_list_ptr == 0 || !reader.process().is_valid_pointer(ap_list_ptr) {
+                        continue;
+                    }
+                    if let Ok(info_ptrs) = read_pointer_list(
+                        &reader, ap_list_ptr,
+                        &self.offsets.list, &self.offsets.array,
+                        self.offsets.validation.max_players,
+                    ) {
+                        for info_ptr in info_ptrs {
+                            let pid = reader.read_u8(info_ptr + 0x28).unwrap_or(255);
+                            let resolved_pc = pc_map.get(&pid).copied().unwrap_or(0);
+
+                            // Try direct read_player with resolved pc
+                            let mut snapshot_opt = None;
+                            if resolved_pc != 0 {
+                                if let Ok(player) = validator.read_player(
+                                    resolved_pc,
+                                    self.offsets.player_control.data,
+                                    &self.offsets.networked_player_info,
+                                    cnt,
+                                    &self.offsets.mono_string,
+                                ) {
+                                    if !player.disconnected {
+                                        snapshot_opt = Some(player);
                                     }
                                 }
                             }
-                            if !players.is_empty() { break; }
+
+                            // Fallback to read_player_data with info_ptr and resolved_pc
+                            if snapshot_opt.is_none() {
+                                if let Ok(player) = validator.read_player_data(
+                                    info_ptr, resolved_pc,
+                                    &self.offsets.networked_player_info,
+                                    cnt,
+                                    &self.offsets.mono_string,
+                                ) {
+                                    if !player.disconnected {
+                                        snapshot_opt = Some(player);
+                                    }
+                                }
+                            }
+
+                            if let Some(mut player) = snapshot_opt {
+                                if player.position == (0.0, 0.0) {
+                                    if let Some(&pos) = pos_map.get(&player.player_id) {
+                                        player.position = pos;
+                                    }
+                                }
+                                players.push(player);
+                            }
+                        }
+                        if !players.is_empty() { break; }
+                    }
+                }
+            }
+        }
+
+        // ── 3. Fallback: if GameData didn't return players, use AllPlayerControls directly ──
+        if players.is_empty() {
+            if let Some(list_ptr) = all_controls_list {
+                if let Ok(ptrs) = read_pointer_list(
+                    &reader, list_ptr,
+                    &self.offsets.list, &self.offsets.array,
+                    self.offsets.validation.max_players,
+                ) {
+                    for player_ptr in ptrs {
+                        if let Ok(player) = validator.read_player(
+                            player_ptr,
+                            self.offsets.player_control.data,
+                            &self.offsets.networked_player_info,
+                            cnt,
+                            &self.offsets.mono_string,
+                        ) {
+                            if !player.disconnected {
+                                players.push(player);
+                            }
                         }
                     }
                 }
@@ -229,6 +268,7 @@ impl GameScanner {
                     local_ptr,
                     self.offsets.player_control.data,
                     &self.offsets.networked_player_info,
+                    cnt,
                     &self.offsets.mono_string,
                 ) {
                     if !player.disconnected {
@@ -239,6 +279,49 @@ impl GameScanner {
         }
 
         players = dedupe_players(players);
+
+        // ── Resolve LocalPlayer position and compute relative distances ─────────
+        let local_pos = if let Some(local_ptr) = local_player_ptr {
+            let local_data = reader.read_pointer(local_ptr + self.offsets.player_control.data).unwrap_or(0);
+            let local_id = if local_data != 0 {
+                reader.read_u8(local_data + 0x28).ok()
+            } else {
+                None
+            };
+
+            let pos = validator.read_player_position(
+                local_ptr,
+                local_data,
+                cnt.net_transform,
+                cnt.last_position,
+            );
+
+            // Mark is_local on matching snapshot
+            for p in &mut players {
+                if let Some(lid) = local_id {
+                    if p.player_id == lid || p.is_local {
+                        p.is_local = true;
+                        p.position = pos;
+                    }
+                }
+            }
+
+            Some(pos)
+        } else {
+            None
+        };
+
+        if let Some((lx, ly)) = local_pos {
+            for p in &mut players {
+                if p.is_local {
+                    p.distance = 0.0;
+                } else {
+                    let dx = p.position.0 - lx;
+                    let dy = p.position.1 - ly;
+                    p.distance = (dx * dx + dy * dy).sqrt();
+                }
+            }
+        }
 
         if players.is_empty() {
             return Ok(ScanSnapshot {
@@ -266,6 +349,7 @@ fn scan_players_fallback<'a>(
     validator: &PlayerValidator<'a>,
     data_offset: u64,
     info: &crate::config::NetworkedPlayerInfoFields,
+    cnt: &crate::config::CustomNetworkTransformFields,
     mono_string: &crate::config::MonoStringLayout,
 ) -> Vec<PlayerSnapshot> {
     let mut players = Vec::new();
@@ -356,7 +440,7 @@ fn scan_players_fallback<'a>(
                     if let Ok(back_ptr) = reader.read_pointer(data_ptr_val + b_off) {
                         if back_ptr == ptr_a {
                             seen_data_ptrs.insert(data_ptr_val);
-                            if let Ok(player) = validator.read_player(ptr_a, d_off as u64, info, mono_string) {
+                            if let Ok(player) = validator.read_player(ptr_a, d_off as u64, info, cnt, mono_string) {
                                 players.push(player);
                             }
                         }

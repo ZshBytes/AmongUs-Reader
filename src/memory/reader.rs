@@ -26,6 +26,19 @@ impl<'a> MemoryReader<'a> {
         Ok(i32::from_le_bytes(buf))
     }
 
+    #[allow(dead_code)]
+    pub fn read_u32(&self, address: u64) -> Result<u32, MemoryError> {
+        let mut buf = [0u8; 4];
+        self.process.read_raw(address, &mut buf)?;
+        Ok(u32::from_le_bytes(buf))
+    }
+
+    pub fn read_f32(&self, address: u64) -> Result<f32, MemoryError> {
+        let mut buf = [0u8; 4];
+        self.process.read_raw(address, &mut buf)?;
+        Ok(f32::from_le_bytes(buf))
+    }
+
     pub fn read_u16(&self, address: u64) -> Result<u16, MemoryError> {
         let mut buf = [0u8; 2];
         self.process.read_raw(address, &mut buf)?;
