@@ -22,6 +22,9 @@ pub struct Offsets {
     pub networked_player_info: NetworkedPlayerInfoFields,
     #[serde(default)]
     pub custom_network_transform: CustomNetworkTransformFields,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub game_options: GameOptionsFields,
     pub mono_string: MonoStringLayout,
     pub validation: ValidationConfig,
     pub runtime: RuntimeConfig,
@@ -62,13 +65,123 @@ pub struct StaticPointers {
     pub player_control_type_info: u64,
     pub among_us_client_type_info: u64,
     pub game_data_type_info: u64,
+    #[serde(default = "default_game_options_manager_type_info")]
+    pub game_options_manager_type_info: u64,
 }
 
+fn default_game_options_manager_type_info() -> u64 {
+    0x2AE9C7C
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct StaticFields {
     pub player_control_all_player_controls: u64,
     pub among_us_client_instance: u64,
     pub game_data_instance: u64,
+    #[serde(default)]
+    pub game_options_manager_instance: u64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GameOptionsFields {
+    #[serde(default = "default_current_game_options")]
+    pub current_game_options: u64,
+    #[serde(default = "default_map_id")]
+    pub map_id: u64,
+    #[serde(default = "default_player_speed_mod")]
+    pub player_speed_mod: u64,
+    #[serde(default = "default_crew_light_mod")]
+    pub crew_light_mod: u64,
+    #[serde(default = "default_impostor_light_mod")]
+    pub impostor_light_mod: u64,
+    #[serde(default = "default_kill_cooldown")]
+    pub kill_cooldown: u64,
+    #[serde(default = "default_num_common_tasks")]
+    pub num_common_tasks: u64,
+    #[serde(default = "default_num_long_tasks")]
+    pub num_long_tasks: u64,
+    #[serde(default = "default_num_short_tasks")]
+    pub num_short_tasks: u64,
+    #[serde(default = "default_num_emergency_meetings")]
+    pub num_emergency_meetings: u64,
+    #[serde(default = "default_emergency_cooldown")]
+    pub emergency_cooldown: u64,
+    #[serde(default = "default_num_impostors")]
+    pub num_impostors: u64,
+    #[serde(default = "default_kill_distance")]
+    pub kill_distance: u64,
+    #[serde(default = "default_discussion_time")]
+    pub discussion_time: u64,
+    #[serde(default = "default_voting_time")]
+    pub voting_time: u64,
+    #[serde(default = "default_confirm_impostor")]
+    pub confirm_impostor: u64,
+    #[serde(default = "default_visual_tasks")]
+    pub visual_tasks: u64,
+    #[serde(default = "default_anonymous_votes")]
+    pub anonymous_votes: u64,
+    #[serde(default = "default_role_options")]
+    pub role_options: u64,
+}
+
+fn default_current_game_options() -> u64 {
+    0x14
+}
+fn default_map_id() -> u64 {
+    0x14
+}
+fn default_player_speed_mod() -> u64 {
+    0x18
+}
+fn default_crew_light_mod() -> u64 {
+    0x1C
+}
+fn default_impostor_light_mod() -> u64 {
+    0x20
+}
+fn default_kill_cooldown() -> u64 {
+    0x24
+}
+fn default_num_common_tasks() -> u64 {
+    0x28
+}
+fn default_num_long_tasks() -> u64 {
+    0x2C
+}
+fn default_num_short_tasks() -> u64 {
+    0x30
+}
+fn default_num_emergency_meetings() -> u64 {
+    0x34
+}
+fn default_emergency_cooldown() -> u64 {
+    0x38
+}
+fn default_num_impostors() -> u64 {
+    0x3C
+}
+fn default_kill_distance() -> u64 {
+    0x44
+}
+fn default_discussion_time() -> u64 {
+    0x48
+}
+fn default_voting_time() -> u64 {
+    0x4C
+}
+fn default_confirm_impostor() -> u64 {
+    0x50
+}
+fn default_visual_tasks() -> u64 {
+    0x51
+}
+fn default_anonymous_votes() -> u64 {
+    0x52
+}
+fn default_role_options() -> u64 {
+    0x60
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -246,11 +359,11 @@ impl OverlayConfig {
 
 pub fn parse_vk_key(name: &str) -> i32 {
     match name.trim().to_uppercase().as_str() {
-        "INSERT" | "INS" => 0x2D, // VK_INSERT
-        "DELETE" | "DEL" => 0x2E, // VK_DELETE
-        "HOME" => 0x24,           // VK_HOME
-        "END" => 0x23,            // VK_END
-        "PAGEUP" | "PGUP" | "PRIOR" => 0x21, // VK_PRIOR
+        "INSERT" | "INS" => 0x2D,             // VK_INSERT
+        "DELETE" | "DEL" => 0x2E,             // VK_DELETE
+        "HOME" => 0x24,                       // VK_HOME
+        "END" => 0x23,                        // VK_END
+        "PAGEUP" | "PGUP" | "PRIOR" => 0x21,  // VK_PRIOR
         "PAGEDOWN" | "PGDN" | "NEXT" => 0x22, // VK_NEXT
         "F1" => 0x70,
         "F2" => 0x71,
@@ -371,7 +484,10 @@ impl Offsets {
         let path = path.as_ref();
         let (text, base) = if path.exists() {
             let content = fs::read_to_string(path).map_err(ConfigError::Io)?;
-            let b = path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+            let b = path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf();
             (content, b)
         } else {
             let b = std::env::current_exe()
@@ -478,7 +594,10 @@ mod tests {
 
         let dump = discover_dump_sources(&temp);
         assert_eq!(
-            dump.script_json.as_deref().map(Path::new).map(std::path::Path::to_path_buf),
+            dump.script_json
+                .as_deref()
+                .map(Path::new)
+                .map(std::path::Path::to_path_buf),
             Some(script.to_path_buf())
         );
 

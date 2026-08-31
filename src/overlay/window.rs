@@ -1,5 +1,4 @@
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use winit::window::Window;
 use windows::Win32::Foundation::{COLORREF, HWND};
 use windows::Win32::Graphics::Gdi::UpdateWindow;
 use windows::Win32::UI::Shell::{
@@ -9,19 +8,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, LoadIconW, SetLayeredWindowAttributes, SetWindowDisplayAffinity,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, IDI_APPLICATION,
     LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOW, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
-    WINDOW_EX_STYLE, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
+use winit::window::Window;
 
 /// Apply layered transparency, topmost z-order, taskbar hiding, and capture exclusion.
 pub fn apply_stream_proof_styles(window: &Window) {
     let hwnd = window_hwnd(window);
 
     unsafe {
-        let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
 
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        // WS_EX_TOOLWINDOW hides window from taskbar, ~WS_EX_APPWINDOW ensures taskbar exclusion
-        let new_style = (ex_style | (WS_EX_LAYERED.0 as isize) | (WS_EX_TOPMOST.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize))
+        let new_style = (ex_style
+            | (WS_EX_LAYERED.0 as isize)
+            | (WS_EX_TOPMOST.0 as isize)
+            | (WS_EX_TOOLWINDOW.0 as isize)
+            | (WS_EX_NOACTIVATE.0 as isize))
             & !(WS_EX_APPWINDOW.0 as isize);
 
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
@@ -94,7 +97,7 @@ impl SystemTray {
             nid.uCallbackMessage = 0x0400 + 1; // WM_USER + 1
             nid.hIcon = icon;
 
-            let tip = "Among Us Live Overlay\0".encode_utf16().collect::<Vec<_>>();
+            let tip = "Among Us Overlay\0".encode_utf16().collect::<Vec<_>>();
             let len = tip.len().min(nid.szTip.len());
             nid.szTip[..len].copy_from_slice(&tip[..len]);
 
@@ -121,5 +124,3 @@ fn window_hwnd(window: &Window) -> HWND {
         _ => panic!("overlay requires a Win32 window"),
     }
 }
-
-const WS_EX_TOPMOST: WINDOW_EX_STYLE = WINDOW_EX_STYLE(0x0000_0008);

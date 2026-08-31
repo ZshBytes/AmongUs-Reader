@@ -1,4 +1,5 @@
 pub mod render;
+pub mod theme;
 pub mod window;
 
 use std::ffi::CString;
@@ -24,7 +25,9 @@ use winit::window::{Window, WindowAttributes, WindowId};
 use crate::config::OverlayConfig;
 use crate::game::state::SharedGameState;
 use crate::overlay::render::{draw_overlay, OverlayAction};
-use crate::overlay::window::{apply_stream_proof_styles, set_stream_proof, set_window_visible, SystemTray};
+use crate::overlay::window::{
+    apply_stream_proof_styles, set_stream_proof, set_window_visible, SystemTray,
+};
 
 pub struct OverlayApp;
 
@@ -83,9 +86,8 @@ impl OverlayHandler {
         if self.is_editing_key {
             return;
         }
-        let key_state = unsafe {
-            windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(self.vk_code)
-        };
+        let key_state =
+            unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(self.vk_code) };
         let is_down = (key_state as u16 & 0x8000) != 0;
         if is_down && !self.toggle_key_down {
             self.toggle_key_down = true;
@@ -98,22 +100,22 @@ impl OverlayHandler {
         }
     }
 
-fn save_key_setting(key: &str) {
-    // Try updating offsets.toml if it exists
-    if let Ok(content) = std::fs::read_to_string("offsets.toml") {
-        let lines: Vec<String> = content
-            .lines()
-            .map(|line| {
-                if line.trim_start().starts_with("toggle_key") {
-                    format!("toggle_key = \"{key}\"")
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect();
-        let _ = std::fs::write("offsets.toml", lines.join("\r\n"));
+    fn save_key_setting(key: &str) {
+        // Try updating offsets.toml if it exists
+        if let Ok(content) = std::fs::read_to_string("offsets.toml") {
+            let lines: Vec<String> = content
+                .lines()
+                .map(|line| {
+                    if line.trim_start().starts_with("toggle_key") {
+                        format!("toggle_key = \"{key}\"")
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect();
+            let _ = std::fs::write("offsets.toml", lines.join("\r\n"));
+        }
     }
-}
 
     fn init(&mut self, event_loop: &ActiveEventLoop) {
         if self.gl.is_some() {
@@ -140,7 +142,9 @@ fn save_key_setting(key: &str) {
 
         let (window, gl_config) = DisplayBuilder::new()
             .with_window_attributes(Some(attrs))
-            .build(event_loop, template, |mut configs| configs.next().expect("gl config"))
+            .build(event_loop, template, |mut configs| {
+                configs.next().expect("gl config")
+            })
             .expect("window/display");
 
         let window = window.expect("window");
@@ -177,10 +181,7 @@ fn save_key_setting(key: &str) {
         let gl = Arc::new(unsafe {
             glow::Context::from_loader_function(|symbol| {
                 let name = CString::new(symbol).expect("gl symbol");
-                gl_config
-                    .display()
-                    .get_proc_address(name.as_c_str())
-                    as *const _
+                gl_config.display().get_proc_address(name.as_c_str()) as *const _
             })
         });
 
@@ -248,6 +249,24 @@ fn save_key_setting(key: &str) {
                 let new_val = self.shared.toggle_stream_proof();
                 set_stream_proof(window, new_val);
             }
+            OverlayAction::ToggleLogKills => {
+                self.shared.toggle_log_kills();
+            }
+            OverlayAction::ToggleLogGameState => {
+                self.shared.toggle_log_game_state();
+            }
+            OverlayAction::ToggleLogPlayerList => {
+                self.shared.toggle_log_player_list();
+            }
+            OverlayAction::ResizeWindow => {
+                let _ = window.drag_resize_window(winit::window::ResizeDirection::SouthEast);
+            }
+            OverlayAction::ExportMatchLog => {
+                let _ = self.shared.export_match_log();
+            }
+            OverlayAction::ClearLogs => {
+                self.shared.clear_logs();
+            }
             OverlayAction::ChangeToggleKey(new_key) => {
                 self.config.toggle_key = new_key.clone();
                 self.vk_code = self.config.toggle_key_vk();
@@ -260,16 +279,18 @@ fn save_key_setting(key: &str) {
             .egui_winit
             .handle_platform_output(window, full_output.platform_output);
 
-        let clipped = bundle.egui_winit.egui_ctx().tessellate(
-            full_output.shapes,
-            full_output.pixels_per_point,
-        );
+        let clipped = bundle
+            .egui_winit
+            .egui_ctx()
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         let size = window.inner_size();
         bundle.context.make_current(&bundle.surface).ok();
 
         unsafe {
-            bundle.gl.viewport(0, 0, size.width as i32, size.height as i32);
+            bundle
+                .gl
+                .viewport(0, 0, size.width as i32, size.height as i32);
             bundle.gl.clear_color(0.0, 0.0, 0.0, 0.0);
             bundle.gl.clear(glow::COLOR_BUFFER_BIT);
         }
@@ -291,12 +312,7 @@ impl ApplicationHandler for OverlayHandler {
         self.init(event_loop);
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let repaint = if let Some(bundle) = self.gl.as_mut() {
             let window = &bundle.window;
             let res = bundle.egui_winit.on_window_event(window, &event);

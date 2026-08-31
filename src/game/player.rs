@@ -11,5 +11,10 @@ pub struct PlayerSnapshot {
     pub is_local: bool,
     pub distance: f32,
     pub player_id: u8,
+    pub friend_code: String,
+    pub in_vent: bool,
+    pub shapeshifting: bool,
+    pub shapeshift_target: Option<u8>,
+    pub voted_for: Option<i16>,
+    pub was_ejected: bool,
 }
-

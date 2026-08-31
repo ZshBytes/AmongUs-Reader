@@ -41,12 +41,10 @@ pub fn read_mono_string(
     // Reject unprintable control characters (< 0x20, except common whitespace) and
     // invalid UTF-16 lone surrogates (0xD800..=0xDFFF). Everything else — including
     // CJK, diacritics, emoji surrogates, etc. — is allowed.
-    if units.iter().any(|&u| {
-        (u < 0x0020)
-            || (u >= 0xD800 && u <= 0xDFFF)
-            || u == 0xFFFE
-            || u == 0xFFFF
-    }) {
+    if units
+        .iter()
+        .any(|&u| (u < 0x0020) || (u >= 0xD800 && u <= 0xDFFF) || u == 0xFFFE || u == 0xFFFF)
+    {
         return Err(MemoryError::InvalidString);
     }
 

@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::config::{CustomNetworkTransformFields, MonoStringLayout, NetworkedPlayerInfoFields, ValidationConfig};
+use crate::config::{
+    CustomNetworkTransformFields, MonoStringLayout, NetworkedPlayerInfoFields, ValidationConfig,
+};
 use crate::game::player::PlayerSnapshot;
 use crate::game::role::RoleType;
 use crate::memory::error::MemoryError;
@@ -78,14 +80,26 @@ impl<'a> PlayerValidator<'a> {
         }
 
         // Disconnected must be a boolean byte (0 or 1).
-        let disconnected_byte = self.reader.read_u8(data_ptr + info.disconnected).unwrap_or(0);
+        let disconnected_byte = self
+            .reader
+            .read_u8(data_ptr + info.disconnected)
+            .unwrap_or(0);
         if disconnected_byte > 1 {
             return Err(MemoryError::InvalidPointer(data_ptr));
         }
         let disconnected = disconnected_byte == 1;
 
         // is_dead: strictly check NetworkedPlayerInfo.IsDead at 0x54.
-        let is_dead = self.reader.read_u8(data_ptr + info.is_dead)
+        let is_dead = self
+            .reader
+            .read_u8(data_ptr + info.is_dead)
+            .map(|b| b == 1)
+            .unwrap_or(false);
+
+        // was_ejected: check NetworkedPlayerInfo.WasEjected at 0x55.
+        let was_ejected = self
+            .reader
+            .read_u8(data_ptr + 0x55)
             .map(|b| b == 1)
             .unwrap_or(false);
 
@@ -95,31 +109,121 @@ impl<'a> PlayerValidator<'a> {
 
         // Name + color resolution.
         let is_valid_player_name = |n: &str| -> bool {
-            if n.is_empty() || n.len() > self.validation.max_player_name_len { return false; }
+            if n.is_empty() || n.len() > self.validation.max_player_name_len {
+                return false;
+            }
             let lower = n.to_lowercase();
             const INVALID: &[&str] = &[
-                "weapons", "shields", "navigation", "reactor", "o2", "security",
-                "medbay", "electrical", "cafeteria", "storage", "admin", "communications",
-                "upper engine", "lower engine", "office", "laboratory", "specimen room",
-                "decontamination", "main hall", "engine room", "cockpit", "vault",
-                "showers", "lounge", "cargo bay", "records", "gap room", "meeting room",
-                "tasks", "cancel", "use", "report", "kill", "sabotage", "vent",
-                "untagged", "gameobject", "transform", "maincamera", "camera", "canvas",
-                "eventsystem", "default", "sprite", "audio", "sound", "manager", "controller",
+                "weapons",
+                "shields",
+                "navigation",
+                "reactor",
+                "o2",
+                "security",
+                "medbay",
+                "electrical",
+                "cafeteria",
+                "storage",
+                "admin",
+                "communications",
+                "upper engine",
+                "lower engine",
+                "office",
+                "laboratory",
+                "specimen room",
+                "decontamination",
+                "main hall",
+                "engine room",
+                "cockpit",
+                "vault",
+                "showers",
+                "lounge",
+                "cargo bay",
+                "records",
+                "gap room",
+                "meeting room",
+                "tasks",
+                "cancel",
+                "use",
+                "report",
+                "kill",
+                "sabotage",
+                "vent",
+                "untagged",
+                "gameobject",
+                "transform",
+                "maincamera",
+                "camera",
+                "canvas",
+                "eventsystem",
+                "default",
+                "sprite",
+                "audio",
+                "sound",
+                "manager",
+                "controller",
             ];
             !INVALID.contains(&lower.as_str())
         };
 
-        let (name, color_id) = self.resolve_name_color(
-            data_ptr, player_id, string_layout, &is_valid_player_name,
-        );
+        let (name, color_id) =
+            self.resolve_name_color(data_ptr, player_id, string_layout, &is_valid_player_name);
 
-        let position = self.read_player_position(
-            player_control_ptr,
-            data_ptr,
-            cnt.net_transform,
-            cnt.last_position,
-        );
+        let mut pc = player_control_ptr;
+        if pc == 0 || !self.reader.process().is_valid_pointer(pc) {
+            if data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
+                for obj_off in [0x58_u64, 0x5C, 0x54, 0x50, 0x48] {
+                    if let Ok(p) = self.reader.read_pointer(data_ptr + obj_off) {
+                        if p != 0 && self.reader.process().is_valid_pointer(p) {
+                            pc = p;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let position =
+            self.read_player_position(pc, data_ptr, cnt.net_transform, cnt.last_position);
+
+        let mut friend_code = String::new();
+        let mut in_vent = false;
+        let mut shapeshifting = false;
+        let mut shapeshift_target = None;
+
+        if pc != 0 && self.reader.process().is_valid_pointer(pc) {
+            if let Ok(fc_ptr) = self.reader.read_pointer(pc + 0x2C) {
+                if fc_ptr != 0 && self.reader.process().is_valid_pointer(fc_ptr) {
+                    if let Ok(fc) =
+                        read_mono_string(self.reader, fc_ptr, string_layout, self.validation)
+                    {
+                        friend_code = fc.trim().to_string();
+                    }
+                }
+            }
+            in_vent = self.reader.read_u8(pc + 0x48).unwrap_or(0) == 1;
+            let outfit_type = self.reader.read_i32(pc + 0x44).unwrap_or(0);
+            let ss_anim = self.reader.read_u8(pc + 0x4E).unwrap_or(0) == 1;
+            let target_id = self.reader.read_i32(pc + 0x64).unwrap_or(-1);
+
+            let is_morphed = outfit_type == 1 || ss_anim;
+            shapeshifting = is_morphed;
+            if is_morphed && (0..=15).contains(&target_id) {
+                shapeshift_target = Some(target_id as u8);
+            }
+        }
+
+        if friend_code.is_empty() && data_ptr != 0 {
+            if let Ok(fc_ptr) = self.reader.read_pointer(data_ptr + 0x30) {
+                if fc_ptr != 0 && self.reader.process().is_valid_pointer(fc_ptr) {
+                    if let Ok(fc) =
+                        read_mono_string(self.reader, fc_ptr, string_layout, self.validation)
+                    {
+                        friend_code = fc.trim().to_string();
+                    }
+                }
+            }
+        }
 
         Ok(PlayerSnapshot {
             name,
@@ -131,6 +235,12 @@ impl<'a> PlayerValidator<'a> {
             is_local: false,
             distance: 0.0,
             player_id,
+            friend_code,
+            in_vent,
+            shapeshifting,
+            shapeshift_target,
+            voted_for: None,
+            was_ejected,
         })
     }
 
@@ -143,11 +253,7 @@ impl<'a> PlayerValidator<'a> {
         last_pos_off: u64,
     ) -> (f32, f32) {
         let is_valid_coord = |x: f32, y: f32| -> bool {
-            !x.is_nan()
-                && !y.is_nan()
-                && (x != 0.0 || y != 0.0)
-                && x.abs() < 50.0
-                && y.abs() < 50.0
+            !x.is_nan() && !y.is_nan() && (x != 0.0 || y != 0.0) && x.abs() < 50.0 && y.abs() < 50.0
         };
 
         let mut pc = player_control_ptr;
@@ -242,7 +348,11 @@ impl<'a> PlayerValidator<'a> {
         }
 
         // 2. Direct NetworkedPlayerInfo.RoleType field (primary_offset or 0x38)
-        let off = if primary_offset != 0 { primary_offset } else { 0x38 };
+        let off = if primary_offset != 0 {
+            primary_offset
+        } else {
+            0x38
+        };
         if let Ok(v) = self.reader.read_u16(data_ptr + off) {
             if self.valid_roles.contains(&v) || v <= 64 {
                 return v;
@@ -398,7 +508,8 @@ impl<'a> PlayerValidator<'a> {
         }
 
         // Read ColorId at +0x08 (must be valid 0..=25)
-        let color_id = self.reader
+        let color_id = self
+            .reader
             .read_i32(outfit_ptr + 0x08)
             .ok()
             .filter(|&c| c >= self.validation.min_color_id && c <= self.validation.max_color_id)
@@ -411,10 +522,18 @@ impl<'a> PlayerValidator<'a> {
                 _ => continue,
             };
 
-            if let Ok(raw) = read_mono_string(self.reader, name_ptr, string_layout, self.validation) {
+            if let Ok(raw) = read_mono_string(self.reader, name_ptr, string_layout, self.validation)
+            {
                 let trimmed = raw.trim();
-                if trimmed.is_empty() { continue; }
-                if trimmed.starts_with("hat_") || trimmed.starts_with("skin_") || trimmed.starts_with("pet_") || trimmed.starts_with("visor_") || trimmed.starts_with("nameplate_") {
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if trimmed.starts_with("hat_")
+                    || trimmed.starts_with("skin_")
+                    || trimmed.starts_with("pet_")
+                    || trimmed.starts_with("visor_")
+                    || trimmed.starts_with("nameplate_")
+                {
                     continue;
                 }
 

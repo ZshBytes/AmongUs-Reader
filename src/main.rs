@@ -1,5 +1,3 @@
-// Author: @szuwer
-// Among Us Live External Overlay
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
@@ -51,7 +49,7 @@ fn spawn_scanner(offsets: Arc<Offsets>, shared: Arc<SharedGameState>) {
                                 in_active_match: false,
                                 game_state: -1,
                                 players: Vec::new(),
-                                status_message: format!("Waiting for Among Us... ({err})"),
+                                status_message: format!("Waiting for Among Us ({err})"),
                             });
                             thread::sleep(interval);
                             continue;
@@ -62,8 +60,6 @@ fn spawn_scanner(offsets: Arc<Offsets>, shared: Arc<SharedGameState>) {
                 match scanner.scan() {
                     Ok(snapshot) => shared.apply_snapshot(&snapshot),
                     Err(err) => {
-                        // Only clear the process if the process handle itself is invalid/closed
-                        eprintln!("[scan] transient scan error: {err}");
                         shared.apply_snapshot(&ScanSnapshot {
                             connected: true,
                             in_active_match: false,

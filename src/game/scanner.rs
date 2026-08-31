@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::config::Offsets;
@@ -25,6 +26,9 @@ pub struct GameScanner {
     gd_sf_block: Option<u64>,
     /// Cached static fields block for AmongUsClient.
     auc_sf_block: Option<u64>,
+    /// Cached static fields block for MeetingHud.
+    meeting_hud_sf_block: Option<u64>,
+    cached_disguises: HashMap<u8, u8>,
 }
 
 impl GameScanner {
@@ -35,6 +39,8 @@ impl GameScanner {
             pc_sf_block: None,
             gd_sf_block: None,
             auc_sf_block: None,
+            meeting_hud_sf_block: None,
+            cached_disguises: HashMap::new(),
         }
     }
 
@@ -52,6 +58,7 @@ impl GameScanner {
         self.pc_sf_block = None;
         self.gd_sf_block = None;
         self.auc_sf_block = None;
+        self.meeting_hud_sf_block = None;
     }
 
     pub fn set_process(&mut self, process: ProcessHandle) {
@@ -59,6 +66,7 @@ impl GameScanner {
         self.pc_sf_block = None;
         self.gd_sf_block = None;
         self.auc_sf_block = None;
+        self.meeting_hud_sf_block = None;
         self.process = Some(process);
     }
 
@@ -69,8 +77,7 @@ impl GameScanner {
                 in_active_match: false,
                 game_state: -1,
                 players: Vec::new(),
-                status_message:
-                    "Configure offsets.toml (Il2CppDumper TypeInfo addresses)".into(),
+                status_message: "Configure offsets.toml (Il2CppDumper TypeInfo addresses)".into(),
             });
         }
 
@@ -88,31 +95,41 @@ impl GameScanner {
         // sf_offsets, giving garbage field values.
         if self.pc_sf_block.is_none() {
             self.pc_sf_block = find_static_fields_block(
-                &reader, module_base,
+                &reader,
+                module_base,
                 self.offsets.static_pointers.player_control_type_info,
                 &self.offsets.il2cpp,
-            ).ok();
+            )
+            .ok();
         }
         if self.gd_sf_block.is_none() {
             self.gd_sf_block = find_static_fields_block(
-                &reader, module_base,
+                &reader,
+                module_base,
                 self.offsets.static_pointers.game_data_type_info,
                 &self.offsets.il2cpp,
-            ).ok();
+            )
+            .ok();
         }
         if self.auc_sf_block.is_none() {
             self.auc_sf_block = find_static_fields_block(
-                &reader, module_base,
+                &reader,
+                module_base,
                 self.offsets.static_pointers.among_us_client_type_info,
                 &self.offsets.il2cpp,
-            ).ok();
+            )
+            .ok();
         }
 
         // Helper: read a pointer from a static fields block, returning None on null/invalid.
         let read_sf_ptr = |block: Option<u64>, offset: u64| -> Option<u64> {
             let base = block?;
             let ptr = reader.read_pointer(base + offset).ok()?;
-            if ptr == 0 || !reader.process().is_valid_pointer(ptr) { None } else { Some(ptr) }
+            if ptr == 0 || !reader.process().is_valid_pointer(ptr) {
+                None
+            } else {
+                Some(ptr)
+            }
         };
 
         // ── AmongUsClient.Instance + GameState ────────────────────────────────────
@@ -120,10 +137,16 @@ impl GameScanner {
         // player scan on it — in release builds the AmongUsClient pointer resolution
         // can transiently return -1 under LTO, so blocking here would produce a false
         // "Waiting for lobby" even when players are live.
-        let client_ptr = read_sf_ptr(self.auc_sf_block,
-            self.offsets.static_fields.among_us_client_instance);
+        let client_ptr = read_sf_ptr(
+            self.auc_sf_block,
+            self.offsets.static_fields.among_us_client_instance,
+        );
         let game_state = client_ptr
-            .and_then(|c| reader.read_i32(c + self.offsets.among_us_client.game_state).ok())
+            .and_then(|c| {
+                reader
+                    .read_i32(c + self.offsets.among_us_client.game_state)
+                    .ok()
+            })
             .unwrap_or(-1);
 
         let active_states = self.offsets.active_game_states();
@@ -131,12 +154,18 @@ impl GameScanner {
 
         // ── Read LocalPlayer and AllPlayerControls from THE SAME pc_sf_block ──────
         let local_player_ptr = read_sf_ptr(self.pc_sf_block, 0x0); // PlayerControl.LocalPlayer
-        let all_controls_list = read_sf_ptr(self.pc_sf_block,      // AllPlayerControls List*
-            self.offsets.static_fields.player_control_all_player_controls);
+        let all_controls_list = read_sf_ptr(
+            self.pc_sf_block, // AllPlayerControls List*
+            self.offsets
+                .static_fields
+                .player_control_all_player_controls,
+        );
 
         // ── GameData.Instance -> AllPlayers ───────────────────────────────────────
-        let game_data_ptr = read_sf_ptr(self.gd_sf_block,
-            self.offsets.static_fields.game_data_instance);
+        let game_data_ptr = read_sf_ptr(
+            self.gd_sf_block,
+            self.offsets.static_fields.game_data_instance,
+        );
 
         let validator = PlayerValidator::new(
             &reader,
@@ -154,15 +183,20 @@ impl GameScanner {
 
         if let Some(list_ptr) = all_controls_list {
             if let Ok(ptrs) = read_pointer_list(
-                &reader, list_ptr,
-                &self.offsets.list, &self.offsets.array,
+                &reader,
+                list_ptr,
+                &self.offsets.list,
+                &self.offsets.array,
                 self.offsets.validation.max_players,
             ) {
                 for pc_ptr in ptrs {
                     if pc_ptr != 0 && reader.process().is_valid_pointer(pc_ptr) {
                         let pid = reader.read_u8(pc_ptr + 0x28).unwrap_or(255);
                         let pos = validator.read_player_position(
-                            pc_ptr, 0, cnt.net_transform, cnt.last_position,
+                            pc_ptr,
+                            0,
+                            cnt.net_transform,
+                            cnt.last_position,
                         );
                         if pid <= 15 {
                             pc_map.insert(pid, pc_ptr);
@@ -183,8 +217,10 @@ impl GameScanner {
                         continue;
                     }
                     if let Ok(info_ptrs) = read_pointer_list(
-                        &reader, ap_list_ptr,
-                        &self.offsets.list, &self.offsets.array,
+                        &reader,
+                        ap_list_ptr,
+                        &self.offsets.list,
+                        &self.offsets.array,
                         self.offsets.validation.max_players,
                     ) {
                         for info_ptr in info_ptrs {
@@ -210,7 +246,8 @@ impl GameScanner {
                             // Fallback to read_player_data with info_ptr and resolved_pc
                             if snapshot_opt.is_none() {
                                 if let Ok(player) = validator.read_player_data(
-                                    info_ptr, resolved_pc,
+                                    info_ptr,
+                                    resolved_pc,
                                     &self.offsets.networked_player_info,
                                     cnt,
                                     &self.offsets.mono_string,
@@ -230,7 +267,9 @@ impl GameScanner {
                                 players.push(player);
                             }
                         }
-                        if !players.is_empty() { break; }
+                        if !players.is_empty() {
+                            break;
+                        }
                     }
                 }
             }
@@ -240,8 +279,10 @@ impl GameScanner {
         if players.is_empty() {
             if let Some(list_ptr) = all_controls_list {
                 if let Ok(ptrs) = read_pointer_list(
-                    &reader, list_ptr,
-                    &self.offsets.list, &self.offsets.array,
+                    &reader,
+                    list_ptr,
+                    &self.offsets.list,
+                    &self.offsets.array,
                     self.offsets.validation.max_players,
                 ) {
                     for player_ptr in ptrs {
@@ -282,7 +323,9 @@ impl GameScanner {
 
         // ── Resolve LocalPlayer position and compute relative distances ─────────
         let local_pos = if let Some(local_ptr) = local_player_ptr {
-            let local_data = reader.read_pointer(local_ptr + self.offsets.player_control.data).unwrap_or(0);
+            let local_data = reader
+                .read_pointer(local_ptr + self.offsets.player_control.data)
+                .unwrap_or(0);
             let local_id = if local_data != 0 {
                 reader.read_u8(local_data + 0x28).ok()
             } else {
@@ -323,6 +366,75 @@ impl GameScanner {
             }
         }
 
+        // Maintain continuous shapeshift disguise targets without flicker
+        for p in &mut players {
+            if p.shapeshifting {
+                if let Some(tid) = p.shapeshift_target {
+                    self.cached_disguises.insert(p.player_id, tid);
+                } else if let Some(&tid) = self.cached_disguises.get(&p.player_id) {
+                    p.shapeshift_target = Some(tid);
+                }
+            } else {
+                self.cached_disguises.remove(&p.player_id);
+            }
+        }
+
+        // ── Read Meeting Voting States (during discussions / meetings) ─────────
+        if self.meeting_hud_sf_block.is_none() {
+            self.meeting_hud_sf_block = find_static_fields_block(
+                &reader,
+                module_base,
+                0x2AC8E84, // MeetingHud_TypeInfo
+                &self.offsets.il2cpp,
+            )
+            .ok();
+        }
+
+        if let Some(sf) = self.meeting_hud_sf_block {
+            if let Ok(hud_ptr) = reader.read_pointer(sf) {
+                if hud_ptr != 0 && reader.process().is_valid_pointer(hud_ptr) {
+                    if let Ok(states_array_ptr) = reader.read_pointer(hud_ptr + 0x5C) {
+                        if states_array_ptr != 0
+                            && reader.process().is_valid_pointer(states_array_ptr)
+                        {
+                            if let Ok(count) = reader.read_i32(states_array_ptr + 0xC) {
+                                let clamped = count.clamp(0, 15) as u64;
+                                for i in 0..clamped {
+                                    if let Ok(vote_area_ptr) =
+                                        reader.read_pointer(states_array_ptr + 0x10 + (i * 4))
+                                    {
+                                        if vote_area_ptr != 0
+                                            && reader.process().is_valid_pointer(vote_area_ptr)
+                                        {
+                                            let pid =
+                                                reader.read_u8(vote_area_ptr + 0x17).unwrap_or(255);
+                                            let did_vote =
+                                                reader.read_u8(vote_area_ptr + 0x16).unwrap_or(0)
+                                                    == 1;
+                                            let voted_for_id =
+                                                reader.read_u8(vote_area_ptr + 0x18).unwrap_or(255);
+
+                                            if did_vote && pid <= 15 {
+                                                if let Some(p) =
+                                                    players.iter_mut().find(|p| p.player_id == pid)
+                                                {
+                                                    p.voted_for = match voted_for_id {
+                                                        253 => Some(-1), // Skipped
+                                                        id if id <= 15 => Some(id as i16),
+                                                        _ => None,
+                                                    };
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if players.is_empty() {
             return Ok(ScanSnapshot {
                 connected: true,
@@ -359,7 +471,9 @@ fn scan_players_fallback<'a>(
     let regions = reader.process().query_committed_regions();
 
     let candidate_data_offsets: Vec<usize> = if pointer_size == 4 {
-        vec![0x58, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54]
+        vec![
+            0x58, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54,
+        ]
     } else {
         vec![data_offset as usize]
     };
@@ -392,7 +506,8 @@ fn scan_players_fallback<'a>(
                 }
 
                 let data_ptr_val = match pointer_size {
-                    4 => u32::from_le_bytes(buffer[i + d_off..i + d_off + 4].try_into().unwrap()) as u64,
+                    4 => u32::from_le_bytes(buffer[i + d_off..i + d_off + 4].try_into().unwrap())
+                        as u64,
                     _ => u64::from_le_bytes(buffer[i + d_off..i + d_off + 8].try_into().unwrap()),
                 };
 
@@ -413,7 +528,9 @@ fn scan_players_fallback<'a>(
                 //
                 // 4 MB buffer: MODULEENTRY32W.modBaseSize can underreport the actual
                 // mapped range when IL2CPP metadata sections extend past the PE image.
-                let module_end = module_base.saturating_add(module_size).saturating_add(0x40_0000);
+                let module_end = module_base
+                    .saturating_add(module_size)
+                    .saturating_add(0x40_0000);
                 let klass_ok = {
                     let mut kbuf = [0u8; 4];
                     if reader.read_bytes(data_ptr_val, &mut kbuf).is_ok() {
@@ -421,10 +538,13 @@ fn scan_players_fallback<'a>(
                         if klass >= module_base && klass < module_end {
                             // Verify klass.image (first field of Il2CppClass) is also in module.
                             let mut mbuf = [0u8; 4];
-                            reader.read_bytes(klass, &mut mbuf).map(|_| {
-                                let meta = u32::from_le_bytes(mbuf) as u64;
-                                meta >= module_base && meta < module_end
-                            }).unwrap_or(false)
+                            reader
+                                .read_bytes(klass, &mut mbuf)
+                                .map(|_| {
+                                    let meta = u32::from_le_bytes(mbuf) as u64;
+                                    meta >= module_base && meta < module_end
+                                })
+                                .unwrap_or(false)
                         } else {
                             false
                         }
@@ -440,7 +560,9 @@ fn scan_players_fallback<'a>(
                     if let Ok(back_ptr) = reader.read_pointer(data_ptr_val + b_off) {
                         if back_ptr == ptr_a {
                             seen_data_ptrs.insert(data_ptr_val);
-                            if let Ok(player) = validator.read_player(ptr_a, d_off as u64, info, cnt, mono_string) {
+                            if let Ok(player) =
+                                validator.read_player(ptr_a, d_off as u64, info, cnt, mono_string)
+                            {
                                 players.push(player);
                             }
                         }

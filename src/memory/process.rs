@@ -3,16 +3,18 @@ use crate::memory::reader::MemoryReader;
 use std::ffi::c_void;
 use std::path::Path;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-use windows::Win32::Foundation::{BOOL, CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE};
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Module32FirstW, Process32FirstW, MODULEENTRY32W, PROCESSENTRY32W,
     TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
-use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::System::Memory::{
     VirtualQueryEx, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_GUARD, PAGE_NOACCESS,
 };
-use windows::Win32::System::Threading::{IsWow64Process, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::System::Threading::{
+    IsWow64Process, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+};
 
 #[derive(Debug)]
 pub struct ProcessHandle {
@@ -26,50 +28,71 @@ impl ProcessHandle {
     pub fn attach(executable_name: &str, module_name: &str) -> Result<Self, MemoryError> {
         let pid = match find_process_id(executable_name) {
             Some(p) => {
-                eprintln!("[attach] Found process '{}' with PID {}", executable_name, p);
+                eprintln!(
+                    "[attach] Found process '{}' with PID {}",
+                    executable_name, p
+                );
                 p
             }
             None => {
-                eprintln!("[attach] Process '{}' NOT found in running processes", executable_name);
+                eprintln!(
+                    "[attach] Process '{}' NOT found in running processes",
+                    executable_name
+                );
                 return Err(MemoryError::ProcessNotFound(executable_name.to_owned()));
             }
         };
 
-        let handle = match unsafe {
-            OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid)
-        } {
-            Ok(h) => {
-                eprintln!("[attach] OpenProcess succeeded for PID {}", pid);
-                h
-            }
-            Err(e) => {
-                eprintln!("[attach] OpenProcess FAILED for PID {}: {}", pid, e);
-                return Err(MemoryError::OpenProcessFailed(format!("{e}")));
-            }
-        };
+        let handle =
+            match unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid) } {
+                Ok(h) => {
+                    eprintln!("[attach] OpenProcess succeeded for PID {}", pid);
+                    h
+                }
+                Err(e) => {
+                    eprintln!("[attach] OpenProcess FAILED for PID {}: {}", pid, e);
+                    return Err(MemoryError::OpenProcessFailed(format!("{e}")));
+                }
+            };
 
         let (module_base, module_size) = match find_module_in_process(pid, module_name) {
             Some(r) => {
-                eprintln!("[attach] Found module '{}' at base=0x{:X} size=0x{:X}", module_name, r.0, r.1);
+                eprintln!(
+                    "[attach] Found module '{}' at base=0x{:X} size=0x{:X}",
+                    module_name, r.0, r.1
+                );
                 r
             }
             None => {
-                eprintln!("[attach] Module '{}' NOT found in PID {}'s modules", module_name, pid);
+                eprintln!(
+                    "[attach] Module '{}' NOT found in PID {}'s modules",
+                    module_name, pid
+                );
                 return Err(MemoryError::ModuleNotFound(module_name.to_owned()));
             }
         };
 
         let pointer_size = if cfg!(target_pointer_width = "64") {
             let mut wow64 = BOOL(0);
-            let is_wow64 = unsafe { IsWow64Process(handle, &mut wow64) }.is_ok()
-                && wow64.as_bool();
-            eprintln!("[attach] WOW64={} => pointer_size={}", is_wow64, if is_wow64 { 4 } else { 8 });
-            if is_wow64 { 4 } else { 8 }
+            let is_wow64 = unsafe { IsWow64Process(handle, &mut wow64) }.is_ok() && wow64.as_bool();
+            eprintln!(
+                "[attach] WOW64={} => pointer_size={}",
+                is_wow64,
+                if is_wow64 { 4 } else { 8 }
+            );
+            if is_wow64 {
+                4
+            } else {
+                8
+            }
         } else {
             4
         };
 
-        eprintln!("[attach] Attached successfully to '{}' (PID {})", executable_name, pid);
+        eprintln!(
+            "[attach] Attached successfully to '{}' (PID {})",
+            executable_name, pid
+        );
         Ok(Self {
             handle,
             module_base,
@@ -239,8 +262,7 @@ fn find_process_id(executable_name: &str) -> Option<u32> {
                     }
 
                     if windows::Win32::System::Diagnostics::ToolHelp::Process32NextW(
-                        snapshot,
-                        &mut entry,
+                        snapshot, &mut entry,
                     )
                     .is_err()
                     {
@@ -251,10 +273,16 @@ fn find_process_id(executable_name: &str) -> Option<u32> {
             let _ = CloseHandle(snapshot);
         }
         if !found_among.is_empty() {
-            eprintln!("[find_process] 'Among Us' related processes seen: {:?}", found_among);
+            eprintln!(
+                "[find_process] 'Among Us' related processes seen: {:?}",
+                found_among
+            );
             eprintln!("[find_process] but none matched target '{}'", target);
         } else {
-            eprintln!("[find_process] No processes containing 'among' found at all (target='{}')", target);
+            eprintln!(
+                "[find_process] No processes containing 'among' found at all (target='{}')",
+                target
+            );
         }
     } else {
         eprintln!("[find_process] CreateToolhelp32Snapshot(SNAPPROCESS) FAILED");
@@ -269,7 +297,11 @@ fn find_process_id(executable_name: &str) -> Option<u32> {
     for (pid, process) in system.processes() {
         let name = process.name().to_string_lossy().to_ascii_lowercase();
         if name.contains("among") {
-            eprintln!("[find_process/sysinfo] Saw process: {}({})", name, pid.as_u32());
+            eprintln!(
+                "[find_process/sysinfo] Saw process: {}({})",
+                name,
+                pid.as_u32()
+            );
         }
         if name_matches_target(&name, &target) {
             return Some(pid.as_u32());
@@ -288,7 +320,10 @@ fn find_module_in_process(pid: u32, module_name: &str) -> Option<(u64, u64)> {
     ] {
         match unsafe { CreateToolhelp32Snapshot(flags, pid) } {
             Err(e) => {
-                eprintln!("[find_module] Snapshot(flags=0x{:X}, pid={}) FAILED: {}", flags.0, pid, e);
+                eprintln!(
+                    "[find_module] Snapshot(flags=0x{:X}, pid={}) FAILED: {}",
+                    flags.0, pid, e
+                );
             }
             Ok(snapshot) => {
                 let mut entry = MODULEENTRY32W {
@@ -315,14 +350,15 @@ fn find_module_in_process(pid: u32, module_name: &str) -> Option<(u64, u64)> {
                             if module_name_matches_target(&name, &target) {
                                 let res = (entry.modBaseAddr as u64, entry.modBaseSize as u64);
                                 let _ = CloseHandle(snapshot);
-                                eprintln!("[find_module] Found '{}' at 0x{:X} size=0x{:X} (flags=0x{:X})",
-                                    name, res.0, res.1, flags.0);
+                                eprintln!(
+                                    "[find_module] Found '{}' at 0x{:X} size=0x{:X} (flags=0x{:X})",
+                                    name, res.0, res.1, flags.0
+                                );
                                 return Some(res);
                             }
 
                             if windows::Win32::System::Diagnostics::ToolHelp::Module32NextW(
-                                snapshot,
-                                &mut entry,
+                                snapshot, &mut entry,
                             )
                             .is_err()
                             {
@@ -330,13 +366,26 @@ fn find_module_in_process(pid: u32, module_name: &str) -> Option<(u64, u64)> {
                             }
                         }
                     } else {
-                        eprintln!("[find_module] Module32FirstW failed for pid={} flags=0x{:X}", pid, flags.0);
+                        eprintln!(
+                            "[find_module] Module32FirstW failed for pid={} flags=0x{:X}",
+                            pid, flags.0
+                        );
                     }
                     let _ = CloseHandle(snapshot);
                 }
-                eprintln!("[find_module] pid={} flags=0x{:X}: target '{}' not in {} modules: {:?}",
-                    pid, flags.0, target, all_names.len(),
-                    all_names.iter().filter(|n| n.contains("gameassembly") || n.contains("among") || n.contains("unity")).collect::<Vec<_>>());
+                eprintln!(
+                    "[find_module] pid={} flags=0x{:X}: target '{}' not in {} modules: {:?}",
+                    pid,
+                    flags.0,
+                    target,
+                    all_names.len(),
+                    all_names
+                        .iter()
+                        .filter(|n| n.contains("gameassembly")
+                            || n.contains("among")
+                            || n.contains("unity"))
+                        .collect::<Vec<_>>()
+                );
             }
         }
     }

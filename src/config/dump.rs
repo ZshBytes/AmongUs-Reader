@@ -7,8 +7,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::offsets::{
-    AmongUsClientFields, ConfigError, NetworkedPlayerInfoFields, Offsets, PlayerControlFields,
-    StaticFields, StaticPointers,
+    AmongUsClientFields, ConfigError, CustomNetworkTransformFields, NetworkedPlayerInfoFields,
+    Offsets, PlayerControlFields, StaticFields, StaticPointers,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -24,34 +24,32 @@ struct ScriptEntry {
     address: Value,
 }
 
-const TYPEINFO_TARGETS: [(&str, fn(&mut StaticPointers, u64)); 3] = [
-    (
-        "PlayerControl_TypeInfo",
-        |p, v| p.player_control_type_info = v,
-    ),
-    (
-        "AmongUsClient_TypeInfo",
-        |p, v| p.among_us_client_type_info = v,
-    ),
+const TYPEINFO_TARGETS: [(&str, fn(&mut StaticPointers, u64)); 4] = [
+    ("PlayerControl_TypeInfo", |p, v| {
+        p.player_control_type_info = v
+    }),
+    ("AmongUsClient_TypeInfo", |p, v| {
+        p.among_us_client_type_info = v
+    }),
     ("GameData_TypeInfo", |p, v| p.game_data_type_info = v),
+    ("GameOptionsManager_TypeInfo", |p, v| {
+        p.game_options_manager_type_info = v
+    }),
 ];
 
-const STATIC_FIELD_TARGETS: [(&str, &str, fn(&mut StaticFields, u64)); 3] = [
-    (
-        "PlayerControl_StaticFields",
-        "AllPlayerControls",
-        |s, v| s.player_control_all_player_controls = v,
-    ),
-    (
-        "AmongUsClient_StaticFields",
-        "Instance",
-        |s, v| s.among_us_client_instance = v,
-    ),
-    (
-        "GameData_StaticFields",
-        "Instance",
-        |s, v| s.game_data_instance = v,
-    ),
+const STATIC_FIELD_TARGETS: [(&str, &str, fn(&mut StaticFields, u64)); 4] = [
+    ("PlayerControl_StaticFields", "AllPlayerControls", |s, v| {
+        s.player_control_all_player_controls = v
+    }),
+    ("AmongUsClient_StaticFields", "Instance", |s, v| {
+        s.among_us_client_instance = v
+    }),
+    ("GameData_StaticFields", "Instance", |s, v| {
+        s.game_data_instance = v
+    }),
+    ("GameOptionsManager_StaticFields", "Instance", |s, v| {
+        s.game_options_manager_instance = v
+    }),
 ];
 
 impl Offsets {
@@ -75,6 +73,7 @@ impl Offsets {
                 &mut self.player_control,
                 &mut self.networked_player_info,
                 &mut self.among_us_client,
+                &mut self.custom_network_transform,
                 path,
             )?);
         }
@@ -116,7 +115,11 @@ fn parse_script_entries(value: &Value) -> Vec<ScriptEntry> {
     entries
 }
 
-fn collect_script_entries(value: &Value, entries: &mut Vec<ScriptEntry>, parent_name: Option<&str>) {
+fn collect_script_entries(
+    value: &Value,
+    entries: &mut Vec<ScriptEntry>,
+    parent_name: Option<&str>,
+) {
     match value {
         Value::Array(items) => {
             for item in items {
@@ -166,7 +169,10 @@ fn collect_script_entries(value: &Value, entries: &mut Vec<ScriptEntry>, parent_
     }
 }
 
-fn extract_script_name(map: &serde_json::Map<String, Value>, parent_name: Option<&str>) -> Option<String> {
+fn extract_script_name(
+    map: &serde_json::Map<String, Value>,
+    parent_name: Option<&str>,
+) -> Option<String> {
     map.get("Name")
         .or_else(|| map.get("name"))
         .and_then(Value::as_str)
@@ -189,9 +195,7 @@ fn apply_il2cpp_h(fields: &mut StaticFields, path: &str) -> Result<Vec<String>, 
         match parse_struct_field_offset(&text, struct_name, field_name) {
             Some(offset) => {
                 setter(fields, offset);
-                notes.push(format!(
-                    "loaded {struct_name}.{field_name} = 0x{offset:X}"
-                ));
+                notes.push(format!("loaded {struct_name}.{field_name} = 0x{offset:X}"));
             }
             None => {}
         }
@@ -222,6 +226,11 @@ fn apply_static_field_offsets_from_dump_cs(
             "Instance",
             set_game_data_instance as fn(&mut StaticFields, u64),
         ),
+        (
+            "GameOptionsManager",
+            "Instance",
+            set_game_options_manager_instance as fn(&mut StaticFields, u64),
+        ),
     ] {
         if let Some(offset) = parse_dump_field(&text, class_name, field_name) {
             setter(fields, offset);
@@ -246,10 +255,15 @@ fn set_game_data_instance(fields: &mut StaticFields, value: u64) {
     fields.game_data_instance = value;
 }
 
+fn set_game_options_manager_instance(fields: &mut StaticFields, value: u64) {
+    fields.game_options_manager_instance = value;
+}
+
 fn apply_dump_cs(
     player_control: &mut PlayerControlFields,
     info: &mut NetworkedPlayerInfoFields,
     client: &mut AmongUsClientFields,
+    custom_network_transform: &mut CustomNetworkTransformFields,
     path: &str,
 ) -> Result<Vec<String>, ConfigError> {
     let text = fs::read_to_string(path).map_err(ConfigError::Io)?;
@@ -261,6 +275,24 @@ fn apply_dump_cs(
     {
         player_control.data = o;
         notes.push(format!("PlayerControl.Data = 0x{o:X}"));
+    }
+
+    if let Some(o) = parse_dump_field(
+        &text,
+        "PlayerControl",
+        "CustomNetworkTransform NetTransform;",
+    )
+    .or_else(|| parse_dump_field(&text, "PlayerControl", "NetTransform;"))
+    {
+        custom_network_transform.net_transform = o;
+        notes.push(format!("PlayerControl.NetTransform = 0x{o:X}"));
+    }
+
+    if let Some(o) = parse_dump_field(&text, "CustomNetworkTransform", "Vector2 lastPosition;")
+        .or_else(|| parse_dump_field(&text, "CustomNetworkTransform", "lastPosition;"))
+    {
+        custom_network_transform.last_position = o;
+        notes.push(format!("CustomNetworkTransform.lastPosition = 0x{o:X}"));
     }
 
     if let Some(o) = parse_dump_field(&text, "NetworkedPlayerInfo.PlayerOutfit", "PlayerName;")
@@ -414,7 +446,9 @@ fn parse_trailing_hex_offset(line: &str) -> Option<u64> {
         let prefix = &line[start..start + 2];
         let body_start = start + 2;
         let remainder = &line[body_start..];
-        let end = remainder.find(|c: char| !c.is_ascii_hexdigit()).unwrap_or(remainder.len());
+        let end = remainder
+            .find(|c: char| !c.is_ascii_hexdigit())
+            .unwrap_or(remainder.len());
         let hex = &remainder[..end];
         if let Ok(value) = u64::from_str_radix(hex, 16) {
             return Some(value);
@@ -448,10 +482,7 @@ mod tests {
 
     #[test]
     fn parses_hex_comment() {
-        assert_eq!(
-            parse_trailing_hex_offset("    foo; // 0x78"),
-            Some(0x78)
-        );
+        assert_eq!(parse_trailing_hex_offset("    foo; // 0x78"), Some(0x78));
     }
 
     #[test]
@@ -460,6 +491,7 @@ mod tests {
             player_control_type_info: 0,
             among_us_client_type_info: 0,
             game_data_type_info: 0,
+            game_options_manager_type_info: 0,
         };
         let text = r#"[
             {"Name": "PlayerControl_TypeInfo", "Address": "0x1234"},
@@ -471,7 +503,9 @@ mod tests {
 
         let notes = apply_script_json(&mut pointers, path.to_str().unwrap()).unwrap();
 
-        assert!(notes.iter().any(|note| note.contains("loaded PlayerControl_TypeInfo")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("loaded PlayerControl_TypeInfo")));
         assert_eq!(pointers.player_control_type_info, 0x1234);
         assert_eq!(pointers.among_us_client_type_info, 0x5678);
         assert_eq!(pointers.game_data_type_info, 0x9ABC);
@@ -485,6 +519,7 @@ mod tests {
             player_control_type_info: 0,
             among_us_client_type_info: 0,
             game_data_type_info: 0,
+            game_options_manager_type_info: 0,
         };
         let text = r#"{
             "PlayerControl_TypeInfo": "0x1234",
@@ -496,7 +531,9 @@ mod tests {
 
         let notes = apply_script_json(&mut pointers, path.to_str().unwrap()).unwrap();
 
-        assert!(notes.iter().any(|note| note.contains("loaded PlayerControl_TypeInfo")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("loaded PlayerControl_TypeInfo")));
         assert_eq!(pointers.player_control_type_info, 0x1234);
         assert_eq!(pointers.among_us_client_type_info, 0x5678);
         assert_eq!(pointers.game_data_type_info, 0x9ABC);
@@ -524,11 +561,14 @@ public class GameData {
             player_control_all_player_controls: 0,
             among_us_client_instance: 0,
             game_data_instance: 0,
+            game_options_manager_instance: 0,
         };
-        let notes = apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap())
-            .unwrap();
+        let notes =
+            apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap()).unwrap();
 
-        assert!(notes.iter().any(|note| note.contains("PlayerControl.AllPlayerControls")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("PlayerControl.AllPlayerControls")));
         assert_eq!(fields.player_control_all_player_controls, 0x4);
         assert_eq!(fields.among_us_client_instance, 0x0);
         assert_eq!(fields.game_data_instance, 0x0);
@@ -553,16 +593,27 @@ public enum GameStates {
         std::fs::write(&path, text).unwrap();
 
         let mut client = AmongUsClientFields { game_state: 0 };
-        let notes = apply_dump_cs(&mut PlayerControlFields { data: 0 }, &mut NetworkedPlayerInfoFields {
-            player_name: 0,
-            color_id: 0,
-            role_type: 0,
-            disconnected: 0,
-            is_dead: 0,
-        }, &mut client, path.to_str().unwrap())
-            .unwrap();
+        let notes = apply_dump_cs(
+            &mut PlayerControlFields { data: 0 },
+            &mut NetworkedPlayerInfoFields {
+                player_name: 0,
+                color_id: 0,
+                role_type: 0,
+                disconnected: 0,
+                is_dead: 0,
+            },
+            &mut client,
+            &mut CustomNetworkTransformFields {
+                net_transform: 0,
+                last_position: 0,
+            },
+            path.to_str().unwrap(),
+        )
+        .unwrap();
 
-        assert!(notes.iter().any(|note| note.contains("AmongUsClient.GameState")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("AmongUsClient.GameState")));
         assert_eq!(client.game_state, 0x5C);
 
         std::fs::remove_file(path).unwrap();
@@ -588,11 +639,14 @@ public class AmongUsClient : InnerNetClient {
             player_control_all_player_controls: 0,
             among_us_client_instance: 0,
             game_data_instance: 0,
+            game_options_manager_instance: 0,
         };
-        let notes = apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap())
-            .unwrap();
+        let notes =
+            apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap()).unwrap();
 
-        assert!(notes.iter().any(|note| note.contains("PlayerControl.AllPlayerControls")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("PlayerControl.AllPlayerControls")));
         assert_eq!(fields.player_control_all_player_controls, 0x4);
 
         std::fs::remove_file(path).unwrap();

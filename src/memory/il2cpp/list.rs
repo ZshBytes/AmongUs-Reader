@@ -30,7 +30,10 @@ fn try_read_pointer_array(
             + (index as u64) * array_layout.element_size_bytes(pointer_size);
         let element_ptr_addr = array_ptr + element_offset;
         let mut element_buf = vec![0u8; pointer_size as usize];
-        let element_val = if reader.read_bytes(element_ptr_addr, &mut element_buf).is_ok() {
+        let element_val = if reader
+            .read_bytes(element_ptr_addr, &mut element_buf)
+            .is_ok()
+        {
             Some(match pointer_size {
                 4 => u32::from_le_bytes(element_buf.clone().try_into().unwrap()) as u64,
                 8 => u64::from_le_bytes(element_buf.clone().try_into().unwrap()),
@@ -111,13 +114,7 @@ pub fn read_pointer_list(
     ];
 
     for (items_offset, size_offset, _label) in candidate_offsets {
-        match try_read_list_object(
-            reader,
-            list_ptr,
-            max_entries,
-            items_offset,
-            size_offset,
-        ) {
+        match try_read_list_object(reader, list_ptr, max_entries, items_offset, size_offset) {
             Ok(Some((items_ptr_raw, size))) => {
                 if size == 0 {
                     return Ok(Vec::new());
@@ -154,7 +151,10 @@ fn read_array_elements(
             + (index as u64) * array_layout.element_size_bytes(pointer_size);
         let element_ptr_addr = array_ptr + element_offset;
         let mut element_buf = vec![0u8; pointer_size as usize];
-        let element_val = if reader.read_bytes(element_ptr_addr, &mut element_buf).is_ok() {
+        let element_val = if reader
+            .read_bytes(element_ptr_addr, &mut element_buf)
+            .is_ok()
+        {
             Some(match pointer_size {
                 4 => u32::from_le_bytes(element_buf.clone().try_into().unwrap()) as u64,
                 8 => u64::from_le_bytes(element_buf.clone().try_into().unwrap()),
