@@ -767,7 +767,7 @@ fn draw_player_list(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .button(
-                    RichText::new("Clear Logs")
+                    RichText::new("Clear")
                         .small()
                         .color(Color32::from_rgb(255, 110, 110)),
                 )
@@ -778,7 +778,7 @@ fn draw_player_list(
             }
             if ui
                 .button(
-                    RichText::new("Export Match Log (.txt)")
+                    RichText::new("Export (.txt)")
                         .small()
                         .color(radar.theme.accent_color32()),
                 )
@@ -870,11 +870,11 @@ fn draw_event_logs(
     radar: &RadarState,
 ) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Logs & Terminal Output").strong().size(13.0));
+        ui.label(RichText::new("Console Logs").strong().size(13.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .button(
-                    RichText::new("Clear Logs")
+                    RichText::new("Clear")
                         .small()
                         .color(Color32::from_rgb(255, 110, 110)),
                 )
@@ -885,7 +885,7 @@ fn draw_event_logs(
             }
             if ui
                 .button(
-                    RichText::new("Export Log (.txt)")
+                    RichText::new("Export (.txt)")
                         .small()
                         .color(radar.theme.accent_color32()),
                 )

@@ -240,8 +240,9 @@ impl SharedGameState {
             state.last_kill_time = None;
         }
 
-        // 2. Detect Shapeshift / Disguise transitions
-        if !prev_players.is_empty() {
+        // 2. Detect Shapeshift / Disguise transitions (strictly during regular gameplay, NOT during meetings or meeting transitions)
+        let is_meeting = snapshot.game_state == 3 || state.game_state == 3;
+        if !is_meeting && !prev_players.is_empty() {
             for curr in &snapshot.players {
                 let prev_entry = prev_players.iter().find(|p| p.player_id == curr.player_id);
                 let prev_ss = prev_entry.map(|p| p.shapeshifting).unwrap_or(false);
@@ -249,27 +250,33 @@ impl SharedGameState {
 
                 if curr.shapeshifting {
                     let target_opt = curr.shapeshift_target.and_then(|tid| {
-                        snapshot
-                            .players
-                            .iter()
-                            .find(|p| p.player_id == tid)
-                            .map(|p| p.name.as_str())
+                        if tid != curr.player_id {
+                            snapshot
+                                .players
+                                .iter()
+                                .find(|p| p.player_id == tid && p.player_id != curr.player_id)
+                                .map(|p| p.name.as_str())
+                        } else {
+                            None
+                        }
                     });
 
                     if (!prev_ss || prev_target.is_none()) && target_opt.is_some() {
                         let tname = target_opt.unwrap();
-                        let msg = format!("{} shapeshifted into {}", curr.name, tname);
-                        if state.log_config.log_kills {
-                            println!("[SHAPESHIFT] {msg}");
-                        }
-                        let event = DisguiseEvent {
-                            message: msg,
-                            morpher_name: curr.name.clone(),
-                            target_name: tname.to_string(),
-                        };
-                        state.disguise_events.insert(0, event);
-                        if state.disguise_events.len() > 300 {
-                            state.disguise_events.truncate(300);
+                        if tname != curr.name {
+                            let msg = format!("{} shapeshifted into {}", curr.name, tname);
+                            if state.log_config.log_kills {
+                                println!("[SHAPESHIFT] {msg}");
+                            }
+                            let event = DisguiseEvent {
+                                message: msg,
+                                morpher_name: curr.name.clone(),
+                                target_name: tname.to_string(),
+                            };
+                            state.disguise_events.insert(0, event);
+                            if state.disguise_events.len() > 300 {
+                                state.disguise_events.truncate(300);
+                            }
                         }
                     }
                 } else if prev_ss && !curr.shapeshifting {

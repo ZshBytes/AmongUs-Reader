@@ -208,7 +208,7 @@ impl<'a> PlayerValidator<'a> {
 
             let is_morphed = outfit_type == 1 || ss_anim;
             shapeshifting = is_morphed;
-            if is_morphed && (0..=15).contains(&target_id) {
+            if is_morphed && (0..=15).contains(&target_id) && (target_id as u8) != player_id {
                 shapeshift_target = Some(target_id as u8);
             }
         }
