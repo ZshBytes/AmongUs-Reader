@@ -577,7 +577,9 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         PlayerFilter::ImpostorsOnly | PlayerFilter::CrewmatesOnly => false,
     };
 
-    if should_draw_bodies && (state.game_state == 2 || state.game_state == 0 || state.game_state == 1) {
+    if should_draw_bodies
+        && (state.game_state == 2 || state.game_state == 0 || state.game_state == 1)
+    {
         for body in &state.dead_bodies {
             if body.location.0 == 0.0 && body.location.1 == 0.0 {
                 continue;
@@ -674,10 +676,7 @@ fn draw_player_card(
             ui.painter().rect_stroke(
                 sq_rect,
                 3.0,
-                Stroke::new(
-                    1.0_f32,
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                ),
+                Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 80)),
             );
 
             ui.vertical(|ui| {
