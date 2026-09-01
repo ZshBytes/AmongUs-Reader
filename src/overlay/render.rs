@@ -6,7 +6,8 @@ use egui::{
     Vec2,
 };
 
-use crate::game::role::{color_name, color_rgb};
+use crate::game::player::PlayerSnapshot;
+use crate::game::role::{color_name, color_rgb, RoleType};
 use crate::game::state::OverlayStatus;
 use crate::overlay::theme::ThemeConfig;
 
@@ -53,10 +54,6 @@ pub enum OverlayTab {
 pub enum RadarMap {
     None,
     Skeld,
-    MiraHq,
-    Polus,
-    Airship,
-    Fungle,
 }
 
 #[derive(Clone)]
@@ -465,23 +462,15 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
         let (map_text, map_color) = match radar.map {
             RadarMap::None => ("Map: None", Color32::from_rgb(170, 170, 170)),
             RadarMap::Skeld => ("Map: The Skeld", Color32::from_rgb(80, 200, 255)),
-            RadarMap::MiraHq => ("Map: MIRA HQ", Color32::from_rgb(100, 230, 160)),
-            RadarMap::Polus => ("Map: Polus", Color32::from_rgb(180, 140, 255)),
-            RadarMap::Airship => ("Map: The Airship", Color32::from_rgb(255, 170, 60)),
-            RadarMap::Fungle => ("Map: The Fungle", Color32::from_rgb(240, 120, 180)),
         };
         if ui
             .button(RichText::new(map_text).small().color(map_color))
-            .on_hover_text("Cycle radar tactical map background")
+            .on_hover_text("Toggle The Skeld tactical blueprint map background")
             .clicked()
         {
             radar.map = match radar.map {
                 RadarMap::None => RadarMap::Skeld,
-                RadarMap::Skeld => RadarMap::MiraHq,
-                RadarMap::MiraHq => RadarMap::Polus,
-                RadarMap::Polus => RadarMap::Airship,
-                RadarMap::Airship => RadarMap::Fungle,
-                RadarMap::Fungle => RadarMap::None,
+                RadarMap::Skeld => RadarMap::None,
             };
         }
 
@@ -545,10 +534,6 @@ fn draw_map_blueprint(
         let (name, bytes) = match map {
             RadarMap::None => ("none", &[][..]),
             RadarMap::Skeld => ("map_skeld", include_bytes!("../../skeld.png").as_slice()),
-            RadarMap::MiraHq => ("map_mira", include_bytes!("../../mira.png").as_slice()),
-            RadarMap::Polus => ("map_polus", include_bytes!("../../polus.png").as_slice()),
-            RadarMap::Airship => ("map_airship", include_bytes!("../../airship.png").as_slice()),
-            RadarMap::Fungle => ("map_fungle", include_bytes!("../../fungle.png").as_slice()),
         };
 
         if let Ok(img) = image::load_from_memory(bytes) {
@@ -637,10 +622,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     let (map_cx, map_cy, map_w, map_h) = match radar.map {
         RadarMap::None => (0.0, 0.0, 1.0, 1.0),
         RadarMap::Skeld => (-1.5, -4.5, 42.0, 28.0),
-        RadarMap::MiraHq => (11.5, 15.5, 36.0, 36.0),
-        RadarMap::Polus => (0.0, 3.5, 42.0, 34.0),
-        RadarMap::Airship => (0.0, 2.0, 46.0, 30.0),
-        RadarMap::Fungle => (0.0, 3.0, 46.0, 36.0),
     };
 
     let scale_factor = if is_map_mode {
@@ -749,6 +730,106 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         local_color,
     );
 
+    // Count Alive Impostors and Crew
+    let alive_impostors: Vec<&PlayerSnapshot> = state
+        .players
+        .iter()
+        .filter(|p| !p.is_dead && !p.disconnected && p.role.is_impostor_team())
+        .collect();
+    let alive_crew_count = state
+        .players
+        .iter()
+        .filter(|p| !p.is_dead && !p.disconnected && !p.role.is_impostor_team())
+        .count();
+
+    // Check closest alive impostor for danger alert
+    let closest_threat = alive_impostors
+        .iter()
+        .filter(|p| !p.is_local && p.distance > 0.05)
+        .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal))
+        .copied();
+
+    // Check closest dead body
+    let closest_body = state
+        .dead_bodies
+        .iter()
+        .filter(|b| b.location != (0.0, 0.0))
+        .map(|b| {
+            let dx = b.location.0 - local_pos.0;
+            let dy = b.location.1 - local_pos.1;
+            (b, (dx * dx + dy * dy).sqrt())
+        })
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Draw Top Status & Threat Alert Banners
+    let mut top_offset = 6.0;
+    
+    // Top Overview Line
+    let stats_text = format!("🔴 Impostors: {} | 🟢 Crew: {}", alive_impostors.len(), alive_crew_count);
+    painter.text(
+        Pos2::new(rect.left() + 8.0, rect.top() + top_offset),
+        Align2::LEFT_TOP,
+        stats_text,
+        FontId::proportional(11.0),
+        Color32::from_rgb(220, 230, 250),
+    );
+    top_offset += 16.0;
+
+    // Danger Alert Banner if impostor nearby
+    if let Some(imp) = closest_threat {
+        if imp.distance <= 5.5 && !local_player.map(|p| p.role.is_impostor_team()).unwrap_or(false) {
+            let alert_rect = egui::Rect::from_min_size(
+                Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
+                Vec2::new(rect.width() - 12.0, 20.0),
+            );
+            painter.rect_filled(
+                alert_rect,
+                3.0,
+                Color32::from_rgba_unmultiplied(180, 20, 20, 190),
+            );
+            painter.rect_stroke(
+                alert_rect,
+                3.0,
+                Stroke::new(1.2_f32, Color32::from_rgb(255, 60, 60)),
+            );
+            painter.text(
+                alert_rect.center(),
+                Align2::CENTER_CENTER,
+                format!("⚠ DANGER: Impostor Nearby! {} is only {:.1}m away!", imp.name, imp.distance),
+                FontId::proportional(11.0),
+                Color32::WHITE,
+            );
+            top_offset += 24.0;
+        }
+    }
+
+    // Dead body detected banner
+    if let Some((body, b_dist)) = closest_body {
+        if b_dist <= 25.0 {
+            let body_alert_rect = egui::Rect::from_min_size(
+                Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
+                Vec2::new(rect.width() - 12.0, 18.0),
+            );
+            painter.rect_filled(
+                body_alert_rect,
+                3.0,
+                Color32::from_rgba_unmultiplied(120, 30, 30, 160),
+            );
+            painter.rect_stroke(
+                body_alert_rect,
+                3.0,
+                Stroke::new(1.0_f32, Color32::from_rgb(255, 90, 90)),
+            );
+            painter.text(
+                body_alert_rect.center(),
+                Align2::CENTER_CENTER,
+                format!("💀 DEAD BODY: {} ({:.1}m away)", body.victim_name, b_dist),
+                FontId::proportional(10.5),
+                Color32::from_rgb(255, 200, 200),
+            );
+        }
+    }
+
     // 1. Draw alive players (Skip ghosts)
     for player in &state.players {
         if player.is_local || player.is_dead {
@@ -756,6 +837,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         }
 
         let is_imp = player.role.is_impostor_team();
+        let is_phantom = player.role == RoleType::Phantom;
 
         match radar.filter {
             PlayerFilter::All => {}
@@ -797,6 +879,8 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         if radar.show_tracers {
             let line_color = if player.in_vent {
                 Color32::from_rgb(255, 140, 40)
+            } else if is_phantom {
+                Color32::from_rgba_unmultiplied(200, 80, 255, 230)
             } else if is_imp {
                 radar.theme.impostor_line_color32()
             } else {
@@ -809,8 +893,11 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         }
 
         painter.circle_filled(target_pt, 5.0, player_col);
+        
         let outline_col = if player.in_vent {
             Color32::from_rgb(255, 140, 40)
+        } else if is_phantom {
+            Color32::from_rgb(210, 90, 255)
         } else if is_imp {
             radar.theme.impostor_line_color32()
         } else {
@@ -818,13 +905,38 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         };
         painter.circle_stroke(target_pt, 5.0, Stroke::new(1.4_f32, outline_col));
 
+        // Pulsating Aura for Phantom Vanish
+        if is_phantom {
+            painter.circle_stroke(
+                target_pt,
+                8.5,
+                Stroke::new(1.6_f32, Color32::from_rgba_unmultiplied(210, 90, 255, 180)),
+            );
+            painter.circle_stroke(
+                target_pt,
+                11.5,
+                Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(180, 70, 255, 90)),
+            );
+        }
+
+        // Threat ring if impostor is within kill range (< 5.5m)
+        if is_imp && distance <= 5.5 {
+            painter.circle_stroke(
+                target_pt,
+                9.0,
+                Stroke::new(1.8_f32, Color32::from_rgb(255, 40, 40)),
+            );
+        }
+
         let dist_str = if distance > 0.1 {
             format!(" ({:.1}m)", distance)
         } else {
             String::new()
         };
 
-        let label_text = if player.shapeshifting {
+        let label_text = if is_phantom {
+            format!("{} [PHANTOM (VANISHED)]{}", player.name, dist_str)
+        } else if player.shapeshifting {
             let morph_target = if let Some(tid) = player.shapeshift_target {
                 state
                     .players
@@ -842,7 +954,9 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             format!("{}{}", player.name, dist_str)
         };
 
-        let text_color = if player.shapeshifting {
+        let text_color = if is_phantom {
+            Color32::from_rgb(220, 110, 255)
+        } else if player.shapeshifting {
             Color32::from_rgb(255, 90, 120)
         } else if player.in_vent {
             Color32::from_rgb(255, 140, 40)
@@ -991,6 +1105,15 @@ fn draw_player_card(
                         );
                     }
                 });
+
+                if player.role == RoleType::Phantom && !player.is_dead {
+                    ui.label(
+                        RichText::new("[PHANTOM: INVISIBLE / VANISHED]")
+                            .strong()
+                            .small()
+                            .color(Color32::from_rgb(210, 90, 255)),
+                    );
+                }
 
                 if player.in_vent {
                     ui.label(
