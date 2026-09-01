@@ -45,7 +45,7 @@ tab_layout = "Vertical"
 corner_rounding = 6.0
 card_opacity = 240
 font_scale = 1.0
-show_radar_grid = true
+show_radar_grid = false
 tracer_thickness = 1.7999999523162842
 crewmate = [
     140,

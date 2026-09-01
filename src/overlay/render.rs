@@ -788,7 +788,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         }
     }
 
-    // 1. Draw alive players (Skip ghosts)
     for player in &state.players {
         if player.is_local || player.is_dead {
             continue;
@@ -810,7 +809,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
                 }
             }
             PlayerFilter::DeadOnly => {
-                // Only dead bodies are drawn
                 continue;
             }
             PlayerFilter::ImpostorsAndDead => {
@@ -933,7 +931,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         );
     }
 
-    // 2. Draw Physical Dead Bodies on the floor (from recorded match kill events)
+    // Dead bodies on floor
     let should_draw_bodies = match radar.filter {
         PlayerFilter::All | PlayerFilter::DeadOnly | PlayerFilter::ImpostorsAndDead => true,
         PlayerFilter::ImpostorsOnly | PlayerFilter::CrewmatesOnly => false,

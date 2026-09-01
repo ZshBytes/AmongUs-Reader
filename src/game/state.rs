@@ -99,8 +99,7 @@ impl SharedGameState {
     pub fn apply_snapshot(&self, snapshot: &ScanSnapshot) {
         let mut state = self.inner.write();
 
-        // 1. Detect any alive -> dead transitions (Kill Events)
-        // Strictly ignore deaths that occur during meetings or from voting ejections (was_ejected == true)
+        // Check kill events (skip ejections and meeting deaths)
         let prev_players = state.players.clone();
         let is_discussion = snapshot.game_state == 3 || state.game_state == 3;
         if !is_discussion && !prev_players.is_empty() {
@@ -123,9 +122,6 @@ impl SharedGameState {
                                 (0.0, 0.0)
                             };
 
-                            // Find killer:
-                            // 1. Alive Impostor within 7m (in online matches)
-                            // 2. If no impostor assigned or in Freeplay: local player if within 4m or nearest player
                             let mut impostors: Vec<_> = snapshot
                                 .players
                                 .iter()

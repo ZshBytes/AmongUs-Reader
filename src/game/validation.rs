@@ -408,12 +408,6 @@ impl<'a> PlayerValidator<'a> {
         0
     }
 
-    /// Resolve the player's display name and color.
-    ///
-    /// Priority:
-    /// 1. PlayerOutfit.PlayerName at +0x20 and ColorId at +0x08 (canonical in-game nickname & color)
-    /// 2. NetworkedPlayerInfo.FriendCode at +0x30 (stripped of #tag if needed)
-    /// 3. "Player {id}" / (id % 18) fallback
     fn resolve_name_color(
         &self,
         data_ptr: u64,
@@ -421,12 +415,10 @@ impl<'a> PlayerValidator<'a> {
         string_layout: &MonoStringLayout,
         is_valid: &impl Fn(&str) -> bool,
     ) -> (String, i32) {
-        // Helper: try to read a mono string from a heap address.
         let try_string = |ptr: u64| -> Option<String> {
             read_mono_string(self.reader, ptr, string_layout, self.validation).ok()
         };
 
-        // Extract base name from a raw string.
         let extract_name = |raw: &str| -> Option<String> {
             let base = if raw.contains('#') {
                 raw.split('#').next().unwrap_or(raw)
@@ -444,14 +436,14 @@ impl<'a> PlayerValidator<'a> {
             }
         };
 
-        // ─── Phase 1: Try PlayerOutfit (canonical source for nickname & color) ───
+        // Try outfit first (in-game name/color)
         if let Some((outfit_name, color)) = self.find_outfit(data_ptr, string_layout) {
             if let Some(n) = extract_name(&outfit_name) {
                 return (n, color);
             }
         }
 
-        // ─── Phase 2: Fallback to FriendCode or Player {id} ───
+        // Fall back to friend code or fallback id
         let mut best_name: Option<String> = None;
         for off in [0x30_u64, 0x2C, 0x34] {
             let ptr = match self.reader.read_pointer(data_ptr + off) {
@@ -471,7 +463,6 @@ impl<'a> PlayerValidator<'a> {
         (name, color)
     }
 
-    /// Try to find a `PlayerOutfit` object and return (name, color).
     fn find_outfit(
         &self,
         data_ptr: u64,
@@ -479,8 +470,7 @@ impl<'a> PlayerValidator<'a> {
     ) -> Option<(String, i32)> {
         let pointer_size = self.reader.process().pointer_size();
 
-        // ── Path A: Dictionary traversal ──
-        // NetworkedPlayerInfo.Outfits is at 0x40.
+        // NetworkedPlayerInfo.Outfits dict offset
         let dict_offsets: &[u64] = if pointer_size == 4 {
             &[0x40, 0x3C, 0x44, 0x38, 0x30, 0x2C, 0x28, 0x20, 0x24]
         } else {
