@@ -540,12 +540,12 @@ fn draw_map_hallway(
     }
 }
 
-fn draw_chamfered_room(
+fn draw_authentic_room(
     painter: &egui::Painter,
     name: &str,
     center_pos: (f32, f32),
     size: (f32, f32),
-    chamfer_type: u8,
+    shape_type: u8,
     pos_to_screen: &impl Fn(f32, f32) -> Pos2,
     scale_factor: f32,
     rect: egui::Rect,
@@ -558,64 +558,97 @@ fn draw_chamfered_room(
         return;
     }
 
-    let c = (w.min(h) * 0.25).clamp(3.0, 16.0);
+    let room_blue = Color32::from_rgba_unmultiplied(18, 76, 240, 225);
+    let border_stroke = Stroke::new(2.2_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 250));
+
     let min = room_rect.min;
     let max = room_rect.max;
+    let c = (w.min(h) * 0.28).clamp(4.0, 18.0);
 
-    let points = match chamfer_type {
-        1 => vec![
-            Pos2::new(min.x, min.y),
-            Pos2::new(max.x - c, min.y),
-            Pos2::new(max.x, min.y + c),
-            Pos2::new(max.x, max.y - c),
-            Pos2::new(max.x - c, max.y),
-            Pos2::new(min.x, max.y),
-        ],
-        2 => vec![
-            Pos2::new(min.x + c, min.y),
-            Pos2::new(max.x, min.y),
-            Pos2::new(max.x, max.y),
-            Pos2::new(min.x + c, max.y),
-            Pos2::new(min.x, max.y - c),
-            Pos2::new(min.x, min.y + c),
-        ],
-        3 => vec![
-            Pos2::new(min.x, min.y),
-            Pos2::new(max.x - c, min.y),
-            Pos2::new(max.x, (min.y + max.y) * 0.5),
-            Pos2::new(max.x - c, max.y),
-            Pos2::new(min.x, max.y),
-        ],
-        4 => vec![
-            Pos2::new(min.x + c, min.y),
-            Pos2::new(max.x, min.y),
-            Pos2::new(max.x, max.y),
-            Pos2::new(min.x + c, max.y),
-            Pos2::new(min.x, (min.y + max.y) * 0.5),
-        ],
-        _ => vec![
-            Pos2::new(min.x + c, min.y),
-            Pos2::new(max.x - c, min.y),
-            Pos2::new(max.x, min.y + c),
-            Pos2::new(max.x, max.y - c),
-            Pos2::new(max.x - c, max.y),
-            Pos2::new(min.x + c, max.y),
-            Pos2::new(min.x, max.y - c),
-            Pos2::new(min.x, min.y + c),
-        ],
-    };
+    match shape_type {
+        5 => {
+            let radius = w.min(h) * 0.5;
+            painter.circle_filled(center_pt, radius, room_blue);
+            painter.circle_stroke(center_pt, radius, border_stroke);
+        }
+        6 => {
+            let points = vec![
+                Pos2::new(min.x + c * 0.5, min.y),
+                Pos2::new(max.x - c * 0.5, min.y),
+                Pos2::new(max.x, min.y + c),
+                Pos2::new(max.x, max.y),
+                Pos2::new(min.x, max.y),
+                Pos2::new(min.x, min.y + c),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+        1 => {
+            let points = vec![
+                Pos2::new(min.x, min.y),
+                Pos2::new(max.x - c, min.y),
+                Pos2::new(max.x, min.y + c),
+                Pos2::new(max.x, max.y - c),
+                Pos2::new(max.x - c, max.y),
+                Pos2::new(min.x, max.y),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+        2 => {
+            let points = vec![
+                Pos2::new(min.x + c, min.y),
+                Pos2::new(max.x, min.y),
+                Pos2::new(max.x, max.y),
+                Pos2::new(min.x + c, max.y),
+                Pos2::new(min.x, max.y - c),
+                Pos2::new(min.x, min.y + c),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+        3 => {
+            let points = vec![
+                Pos2::new(min.x, min.y),
+                Pos2::new(max.x - c, min.y),
+                Pos2::new(max.x, center_pt.y),
+                Pos2::new(max.x - c, max.y),
+                Pos2::new(min.x, max.y),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+        4 => {
+            let points = vec![
+                Pos2::new(min.x + c, min.y),
+                Pos2::new(max.x, min.y),
+                Pos2::new(max.x, max.y),
+                Pos2::new(min.x + c, max.y),
+                Pos2::new(min.x, center_pt.y),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+        7 => {
+            painter.rect_filled(room_rect, 4.0, room_blue);
+            painter.rect_stroke(room_rect, 4.0, border_stroke);
+        }
+        _ => {
+            let points = vec![
+                Pos2::new(min.x + c, min.y),
+                Pos2::new(max.x - c, min.y),
+                Pos2::new(max.x, min.y + c),
+                Pos2::new(max.x, max.y - c),
+                Pos2::new(max.x - c, max.y),
+                Pos2::new(min.x + c, max.y),
+                Pos2::new(min.x, max.y - c),
+                Pos2::new(min.x, min.y + c),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+        }
+    }
 
-    let room_blue = Color32::from_rgba_unmultiplied(16, 76, 240, 220);
-    let border_stroke = Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 240));
-
-    painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
-
-    if w > 26.0 && h > 14.0 {
+    if w > 24.0 && h > 13.0 {
         painter.text(
-            room_rect.center(),
+            center_pt,
             Align2::CENTER_CENTER,
             name,
-            FontId::proportional(10.0),
+            FontId::proportional(10.5),
             Color32::WHITE,
         );
     }
@@ -636,135 +669,135 @@ fn draw_map_blueprint(
         RadarMap::None => {}
         RadarMap::Skeld => {
             let hallways = [
-                ((-16.5, 8.5), (-21.0, 0.0), 3.0),
-                ((-16.5, -8.5), (-21.0, 0.0), 3.0),
-                ((-16.5, 8.5), (-16.5, -8.5), 3.0),
-                ((-16.5, 8.5), (-1.0, 11.5), 3.0),
-                ((-8.0, 3.5), (-1.0, 7.5), 2.5),
-                ((-8.0, 3.5), (-16.5, 6.0), 2.5),
-                ((-1.0, 11.5), (11.5, 8.5), 3.0),
-                ((11.5, 8.5), (19.0, 0.0), 3.0),
-                ((8.0, 2.5), (19.0, 0.0), 2.5),
-                ((19.0, 0.0), (12.0, -8.0), 3.0),
-                ((12.0, -8.0), (-1.0, -8.0), 3.0),
+                ((-16.5, 8.5), (-21.0, 0.0), 3.2),
+                ((-16.5, -8.5), (-21.0, 0.0), 3.2),
+                ((-16.5, 8.5), (-16.5, -8.5), 3.2),
+                ((-16.5, 8.5), (-1.0, 11.5), 3.2),
+                ((-8.0, 3.5), (-1.0, 7.5), 2.8),
+                ((-8.0, 3.5), (-16.5, 6.0), 2.8),
+                ((-1.0, 11.5), (11.5, 8.5), 3.2),
+                ((11.5, 8.5), (19.0, 0.0), 3.2),
+                ((8.0, 2.5), (19.0, 0.0), 2.8),
+                ((19.0, 0.0), (12.0, -8.0), 3.2),
+                ((12.0, -8.0), (-1.0, -8.0), 3.2),
                 ((-1.0, -8.0), (5.5, -13.5), 2.8),
                 ((-1.0, -8.0), (-8.0, -4.5), 2.8),
-                ((-1.0, -8.0), (-16.5, -8.5), 3.0),
-                ((-1.0, -8.0), (-1.0, 11.5), 3.2),
-                ((5.5, -4.0), (-1.0, -4.0), 2.5),
-                ((5.5, -4.0), (12.0, -8.0), 2.5),
+                ((-1.0, -8.0), (-16.5, -8.5), 3.2),
+                ((-1.0, -8.0), (-1.0, 11.5), 3.5),
+                ((5.5, -4.0), (-1.0, -4.0), 2.8),
+                ((5.5, -4.0), (12.0, -8.0), 2.8),
             ];
             for (from, to, th) in hallways {
                 draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
-                ("Cafeteria", (-1.0, 11.5), (13.5, 11.5), 0),
+                ("Cafeteria", (-1.0, 11.5), (14.0, 12.0), 0),
                 ("Weapons", (11.5, 8.5), (7.0, 7.5), 1),
-                ("O2", (8.0, 2.5), (4.5, 4.5), 0),
+                ("O2", (8.0, 2.5), (4.5, 4.5), 7),
                 ("Navigation", (19.0, 0.0), (6.5, 7.0), 3),
                 ("Shields", (12.0, -8.0), (7.0, 7.5), 2),
-                ("Communications", (5.5, -13.5), (6.0, 5.5), 0),
+                ("Communications", (5.5, -13.5), (6.0, 5.5), 7),
                 ("Storage", (-1.0, -8.0), (8.5, 9.5), 0),
-                ("Admin", (5.5, -4.0), (7.0, 5.5), 0),
-                ("Electrical", (-8.0, -4.5), (7.5, 7.0), 0),
+                ("Admin", (5.5, -4.0), (7.0, 5.5), 7),
+                ("Electrical", (-8.0, -4.5), (7.5, 7.0), 7),
                 ("Lower Engine", (-16.5, -8.5), (7.5, 7.5), 2),
-                ("Security", (-12.0, 0.0), (5.5, 5.5), 0),
+                ("Security", (-12.0, 0.0), (5.5, 5.5), 7),
                 ("Reactor", (-21.0, 0.0), (6.5, 10.0), 4),
                 ("Upper Engine", (-16.5, 8.5), (7.5, 7.5), 1),
                 ("MedBay", (-8.0, 3.5), (6.0, 6.5), 2),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
+                draw_authentic_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::MiraHq => {
             let hallways = [
-                ((-10.0, -8.0), (-3.0, -8.0), 3.0),
-                ((-3.0, -8.0), (-4.5, 7.5), 3.0),
-                ((-3.0, -8.0), (2.5, -8.0), 3.0),
-                ((-4.5, 7.5), (3.0, 7.5), 3.0),
-                ((0.0, 7.5), (0.0, -4.0), 3.0),
-                ((10.0, -4.0), (10.0, 21.0), 3.2),
-                ((10.0, 16.0), (6.0, 16.0), 2.8),
-                ((10.0, 16.0), (14.0, 16.0), 2.8),
-                ((2.5, -4.0), (14.0, -4.0), 3.0),
-                ((13.5, -4.0), (20.0, -4.0), 3.0),
-                ((20.0, -4.0), (19.0, -10.0), 3.0),
+                ((-10.0, -8.0), (-3.0, -8.0), 3.2),
+                ((-3.0, -8.0), (-4.5, 7.5), 3.2),
+                ((-3.0, -8.0), (2.5, -8.0), 3.2),
+                ((-4.5, 7.5), (3.0, 7.5), 3.2),
+                ((0.0, 7.5), (0.0, -4.0), 3.2),
+                ((10.0, -4.0), (10.0, 21.0), 3.5),
+                ((10.0, 16.0), (6.0, 16.0), 3.0),
+                ((10.0, 16.0), (14.0, 16.0), 3.0),
+                ((2.5, -4.0), (14.0, -4.0), 3.2),
+                ((13.5, -4.0), (20.0, -4.0), 3.2),
+                ((20.0, -4.0), (19.0, -10.0), 3.2),
             ];
             for (from, to, th) in hallways {
                 draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
-                ("Launchpad", (-10.0, -8.0), (7.5, 6.5), 0),
+                ("Launchpad", (-10.0, -8.0), (7.5, 6.5), 7),
                 ("Reactor", (-4.5, 7.5), (6.5, 6.5), 4),
-                ("Laboratory", (3.0, 7.5), (7.0, 6.0), 0),
-                ("Decontamination", (0.0, 0.0), (3.5, 4.5), 0),
-                ("Locker Room", (2.5, -4.0), (7.0, 7.5), 0),
-                ("Communications", (9.0, -2.5), (5.0, 4.0), 0),
-                ("MedBay", (9.0, -7.5), (5.0, 4.5), 0),
-                ("Storage", (13.5, -2.5), (4.0, 4.0), 0),
-                ("Cafeteria", (20.0, -4.0), (9.0, 8.0), 0),
-                ("Balcony", (19.0, -10.0), (8.0, 3.5), 1),
-                ("Office", (6.0, 16.0), (6.5, 6.0), 0),
-                ("Admin", (14.0, 16.0), (6.5, 6.0), 0),
-                ("Greenhouse", (10.0, 22.0), (14.0, 6.5), 0),
+                ("Laboratory", (3.0, 7.5), (7.0, 6.0), 7),
+                ("Decontamination", (0.0, 0.0), (3.5, 4.5), 7),
+                ("Locker Room", (2.5, -4.0), (7.0, 7.5), 7),
+                ("Communications", (9.0, -2.5), (5.0, 4.0), 7),
+                ("MedBay", (9.0, -7.5), (5.0, 4.5), 7),
+                ("Storage", (13.5, -2.5), (4.0, 4.0), 7),
+                ("Cafeteria", (20.0, -4.0), (9.0, 8.0), 1),
+                ("Balcony", (19.0, -10.0), (8.0, 3.5), 7),
+                ("Office", (6.0, 16.0), (6.5, 6.0), 7),
+                ("Admin", (14.0, 16.0), (6.5, 6.0), 7),
+                ("Greenhouse", (10.0, 22.0), (14.0, 6.5), 5),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
+                draw_authentic_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Polus => {
             let hallways = [
-                ((-2.0, 16.0), (-2.0, 10.0), 3.0),
-                ((-13.5, 11.5), (15.0, 11.5), 3.0),
-                ((-16.0, 11.5), (-16.0, -8.5), 3.0),
-                ((2.0, 0.0), (-13.5, 0.0), 3.0),
-                ((2.0, 0.0), (2.5, -7.5), 3.0),
-                ((2.5, -7.5), (-16.0, -8.5), 3.0),
-                ((17.5, -4.5), (7.0, -4.5), 2.8),
-                ((17.5, -4.5), (17.5, 11.5), 2.8),
+                ((-2.0, 16.0), (-2.0, 10.0), 3.2),
+                ((-13.5, 11.5), (15.0, 11.5), 3.2),
+                ((-16.0, 11.5), (-16.0, -8.5), 3.2),
+                ((2.0, 0.0), (-13.5, 0.0), 3.2),
+                ((2.0, 0.0), (2.5, -7.5), 3.2),
+                ((2.5, -7.5), (-16.0, -8.5), 3.2),
+                ((17.5, -4.5), (7.0, -4.5), 3.0),
+                ((17.5, -4.5), (17.5, 11.5), 3.0),
             ];
             for (from, to, th) in hallways {
                 draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
-                ("Dropship", (-2.0, 16.0), (9.0, 8.0), 0),
+                ("Dropship", (-2.0, 16.0), (9.0, 8.0), 6),
                 ("Laboratory", (15.0, 11.5), (14.0, 6.5), 1),
-                ("Electrical", (-13.5, 11.5), (10.0, 6.5), 0),
-                ("Security", (-16.0, 5.0), (5.0, 5.0), 0),
-                ("O2", (-16.0, -1.0), (5.5, 5.0), 0),
-                ("Boiler Room", (-16.0, -8.5), (6.0, 5.5), 0),
-                ("Communications", (-8.0, 0.0), (5.0, 6.0), 0),
-                ("Weapons", (-6.5, -8.5), (6.0, 5.5), 0),
-                ("Storage", (-1.0, 7.5), (6.0, 3.5), 0),
-                ("Office", (2.0, 0.0), (15.0, 4.5), 0),
-                ("Admin", (2.5, -7.5), (7.5, 6.5), 0),
+                ("Electrical", (-13.5, 11.5), (10.0, 6.5), 7),
+                ("Security", (-16.0, 5.0), (5.0, 5.0), 7),
+                ("O2", (-16.0, -1.0), (5.5, 5.0), 1),
+                ("Boiler Room", (-16.0, -8.5), (6.0, 5.5), 7),
+                ("Communications", (-8.0, 0.0), (5.0, 6.0), 7),
+                ("Weapons", (-6.5, -8.5), (6.0, 5.5), 7),
+                ("Storage", (-1.0, 7.5), (6.0, 3.5), 7),
+                ("Office", (2.0, 0.0), (15.0, 4.5), 7),
+                ("Admin", (2.5, -7.5), (7.5, 6.5), 7),
                 ("Specimen Room", (17.5, -4.5), (7.5, 6.5), 0),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
+                draw_authentic_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Airship => {
             let hallways = [
-                ((-18.5, 0.0), (-7.5, 0.0), 3.0),
-                ((-7.5, 0.0), (-7.5, 8.5), 3.0),
-                ((-11.5, 8.5), (8.0, 8.5), 3.0),
-                ((0.0, 8.5), (2.5, 14.5), 3.0),
-                ((-7.5, 0.0), (1.5, 1.5), 3.0),
-                ((1.5, 1.5), (0.0, 8.5), 3.0),
-                ((1.5, 1.5), (9.0, 1.0), 3.0),
-                ((9.0, 1.0), (19.0, 0.0), 3.0),
-                ((8.0, 8.5), (16.0, 7.0), 3.0),
-                ((16.0, 7.0), (19.0, 0.0), 3.0),
-                ((19.0, 0.0), (11.5, -7.5), 3.0),
-                ((1.5, 1.5), (4.0, -8.5), 3.0),
-                ((4.0, -8.5), (-15.0, -10.0), 3.0),
-                ((-15.0, -10.0), (-13.0, -4.5), 3.0),
-                ((-13.0, -4.5), (-18.5, 0.0), 3.0),
+                ((-18.5, 0.0), (-7.5, 0.0), 3.2),
+                ((-7.5, 0.0), (-7.5, 8.5), 3.2),
+                ((-11.5, 8.5), (8.0, 8.5), 3.2),
+                ((0.0, 8.5), (2.5, 14.5), 3.2),
+                ((-7.5, 0.0), (1.5, 1.5), 3.2),
+                ((1.5, 1.5), (0.0, 8.5), 3.2),
+                ((1.5, 1.5), (9.0, 1.0), 3.2),
+                ((9.0, 1.0), (19.0, 0.0), 3.2),
+                ((8.0, 8.5), (16.0, 7.0), 3.2),
+                ((16.0, 7.0), (19.0, 0.0), 3.2),
+                ((19.0, 0.0), (11.5, -7.5), 3.2),
+                ((1.5, 1.5), (4.0, -8.5), 3.2),
+                ((4.0, -8.5), (-15.0, -10.0), 3.2),
+                ((-15.0, -10.0), (-13.0, -4.5), 3.2),
+                ((-13.0, -4.5), (-18.5, 0.0), 3.2),
             ];
             for (from, to, th) in hallways {
                 draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
@@ -772,63 +805,63 @@ fn draw_map_blueprint(
 
             let rooms = [
                 ("Cockpit", (-18.5, 0.0), (7.5, 6.5), 4),
-                ("Communications", (-13.0, 4.5), (5.0, 4.0), 0),
-                ("Armory", (-13.0, -4.5), (5.5, 6.0), 0),
-                ("Viewing Deck", (-15.0, -10.0), (6.5, 3.5), 0),
-                ("Kitchen", (-9.5, -8.5), (6.0, 4.0), 0),
-                ("Security", (-3.0, -9.5), (5.0, 3.5), 0),
-                ("Electrical", (4.0, -8.5), (8.0, 5.5), 0),
-                ("Medical", (11.5, -7.5), (7.0, 4.5), 0),
-                ("Engine Room", (-7.5, 0.0), (8.5, 6.5), 0),
-                ("Vault", (-11.5, 8.5), (7.5, 7.5), 0),
-                ("Brig", (-6.5, 8.5), (5.5, 4.5), 0),
-                ("Meeting Room", (2.5, 14.5), (9.0, 4.5), 0),
-                ("Gap Room", (0.0, 8.5), (7.5, 4.5), 0),
-                ("Main Hall", (1.5, 1.5), (6.5, 6.0), 0),
-                ("Records", (8.0, 8.5), (6.5, 6.0), 0),
-                ("Showers", (9.0, 1.0), (6.0, 6.5), 0),
+                ("Communications", (-13.0, 4.5), (5.0, 4.0), 7),
+                ("Armory", (-13.0, -4.5), (5.5, 6.0), 7),
+                ("Viewing Deck", (-15.0, -10.0), (6.5, 3.5), 7),
+                ("Kitchen", (-9.5, -8.5), (6.0, 4.0), 7),
+                ("Security", (-3.0, -9.5), (5.0, 3.5), 7),
+                ("Electrical", (4.0, -8.5), (8.0, 5.5), 7),
+                ("Medical", (11.5, -7.5), (7.0, 4.5), 7),
+                ("Engine Room", (-7.5, 0.0), (8.5, 6.5), 7),
+                ("Vault", (-11.5, 8.5), (7.5, 7.5), 5),
+                ("Brig", (-6.5, 8.5), (5.5, 4.5), 7),
+                ("Meeting Room", (2.5, 14.5), (9.0, 4.5), 7),
+                ("Gap Room", (0.0, 8.5), (7.5, 4.5), 7),
+                ("Main Hall", (1.5, 1.5), (6.5, 6.0), 7),
+                ("Records", (8.0, 8.5), (6.5, 6.0), 5),
+                ("Showers", (9.0, 1.0), (6.0, 6.5), 7),
                 ("Lounge", (16.0, 7.0), (8.0, 6.0), 1),
                 ("Cargo Bay", (19.0, 0.0), (8.5, 8.0), 3),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
+                draw_authentic_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Fungle => {
             let hallways = [
-                ((-10.0, 7.5), (14.0, 7.0), 3.0),
-                ((4.5, 6.5), (7.5, 11.5), 3.0),
-                ((7.5, 11.5), (13.0, 16.0), 2.8),
-                ((-10.0, 0.0), (-10.0, -5.5), 3.0),
-                ((-10.0, 0.0), (1.0, 0.0), 3.0),
-                ((-3.0, 0.0), (-4.5, -7.0), 3.0),
-                ((-4.5, -7.0), (14.0, -4.5), 3.0),
-                ((14.0, -4.5), (14.0, 7.0), 3.0),
+                ((-10.0, 7.5), (14.0, 7.0), 3.2),
+                ((4.5, 6.5), (7.5, 11.5), 3.2),
+                ((7.5, 11.5), (13.0, 16.0), 3.0),
+                ((-10.0, 0.0), (-10.0, -5.5), 3.2),
+                ((-10.0, 0.0), (1.0, 0.0), 3.2),
+                ((-3.0, 0.0), (-4.5, -7.0), 3.2),
+                ((-4.5, -7.0), (14.0, -4.5), 3.2),
+                ((14.0, -4.5), (14.0, 7.0), 3.2),
             ];
             for (from, to, th) in hallways {
                 draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
-                ("Dropship", (-4.0, 11.5), (7.0, 6.0), 0),
-                ("Mining Pit", (7.5, 11.5), (6.5, 5.5), 0),
-                ("Communications", (13.0, 16.0), (6.0, 4.5), 0),
-                ("Upper Engine", (14.0, 7.0), (6.0, 5.5), 0),
-                ("Cafeteria", (-9.5, 7.5), (6.5, 5.5), 0),
-                ("Splash Zone", (-10.0, 0.0), (7.0, 7.5), 0),
-                ("Dock", (-13.5, -5.5), (4.5, 3.5), 0),
-                ("Kitchen", (-8.5, -5.5), (5.5, 5.0), 0),
-                ("Storage", (-1.0, 7.5), (6.0, 5.5), 0),
-                ("Lookout", (4.5, 6.5), (5.5, 6.5), 0),
-                ("Meeting Room", (-3.0, 0.0), (5.0, 5.0), 0),
-                ("The Dorm", (1.0, 0.0), (5.0, 4.0), 0),
-                ("Laboratory", (-4.5, -7.0), (6.0, 6.5), 0),
-                ("Jungle", (1.0, -7.0), (6.0, 5.0), 0),
-                ("Greenhouse", (6.5, -7.0), (6.0, 5.0), 0),
-                ("Reactor", (14.0, -4.5), (6.0, 6.5), 0),
+                ("Dropship", (-4.0, 11.5), (7.0, 6.0), 6),
+                ("Mining Pit", (7.5, 11.5), (6.5, 5.5), 7),
+                ("Communications", (13.0, 16.0), (6.0, 4.5), 7),
+                ("Upper Engine", (14.0, 7.0), (6.0, 5.5), 7),
+                ("Cafeteria", (-9.5, 7.5), (6.5, 5.5), 7),
+                ("Splash Zone", (-10.0, 0.0), (7.0, 7.5), 7),
+                ("Dock", (-13.5, -5.5), (4.5, 3.5), 7),
+                ("Kitchen", (-8.5, -5.5), (5.5, 5.0), 7),
+                ("Storage", (-1.0, 7.5), (6.0, 5.5), 7),
+                ("Lookout", (4.5, 6.5), (5.5, 6.5), 7),
+                ("Meeting Room", (-3.0, 0.0), (5.5, 5.5), 5),
+                ("The Dorm", (1.0, 0.0), (5.0, 4.0), 7),
+                ("Laboratory", (-4.5, -7.0), (6.0, 6.5), 7),
+                ("Jungle", (1.0, -7.0), (6.0, 5.0), 7),
+                ("Greenhouse", (6.5, -7.0), (6.0, 5.0), 7),
+                ("Reactor", (14.0, -4.5), (6.0, 6.5), 1),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
+                draw_authentic_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
     }
