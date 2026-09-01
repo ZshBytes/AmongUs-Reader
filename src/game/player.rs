@@ -17,5 +17,4 @@ pub struct PlayerSnapshot {
     pub shapeshift_target: Option<u8>,
     pub voted_for: Option<i16>,
     pub was_ejected: bool,
-    pub is_vanished: bool,
 }

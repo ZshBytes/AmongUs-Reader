@@ -881,20 +881,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         };
         painter.circle_stroke(target_pt, 5.0, Stroke::new(1.4_f32, outline_col));
 
-        // Pulsating Aura for Phantom Vanish
-        if player.is_vanished {
-            painter.circle_stroke(
-                target_pt,
-                8.5,
-                Stroke::new(1.6_f32, Color32::from_rgba_unmultiplied(210, 90, 255, 180)),
-            );
-            painter.circle_stroke(
-                target_pt,
-                11.5,
-                Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(180, 70, 255, 90)),
-            );
-        }
-
         // Threat ring if impostor is within kill range (< 5.5m)
         if is_imp && distance <= 5.5 {
             painter.circle_stroke(
@@ -910,9 +896,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             String::new()
         };
 
-        let label_text = if player.is_vanished {
-            format!("{} [VANISHED]{}", player.name, dist_str)
-        } else if player.shapeshifting {
+        let label_text = if player.shapeshifting {
             let morph_target = if let Some(tid) = player.shapeshift_target {
                 state
                     .players
@@ -930,9 +914,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             format!("{}{}", player.name, dist_str)
         };
 
-        let text_color = if player.is_vanished {
-            Color32::from_rgb(220, 110, 255)
-        } else if player.shapeshifting {
+        let text_color = if player.shapeshifting {
             Color32::from_rgb(255, 90, 120)
         } else if player.in_vent {
             Color32::from_rgb(255, 140, 40)
@@ -1082,14 +1064,6 @@ fn draw_player_card(
                     }
                 });
 
-                if player.is_vanished && !player.is_dead {
-                    ui.label(
-                        RichText::new("[VANISHED: INVISIBLE]")
-                            .strong()
-                            .small()
-                            .color(Color32::from_rgb(210, 90, 255)),
-                    );
-                }
 
                 if player.in_vent {
                     ui.label(
@@ -1426,38 +1400,6 @@ fn draw_event_logs(
 
         ui.add_space(6.0);
 
-        // Phantom Vanish & Unvanish Feed
-        ui.group(|ui| {
-            ui.label(
-                RichText::new("Phantom Vanishes")
-                    .strong()
-                    .color(Color32::from_rgb(210, 100, 255)),
-            );
-            ui.add_space(2.0);
-
-            if state.vanish_events.is_empty() {
-                ui.label(
-                    RichText::new("No phantom vanishes detected yet")
-                        .italics()
-                        .color(Color32::from_rgb(160, 170, 180)),
-                );
-            } else {
-                for event in &state.vanish_events {
-                    let col = if event.is_vanished {
-                        Color32::from_rgb(220, 110, 255)
-                    } else {
-                        Color32::from_rgb(170, 195, 255)
-                    };
-                    ui.label(
-                        RichText::new(&event.message)
-                            .strong()
-                            .color(col),
-                    );
-                }
-            }
-        });
-
-        ui.add_space(6.0);
 
         // Kill & Death Event Feed
         ui.group(|ui| {

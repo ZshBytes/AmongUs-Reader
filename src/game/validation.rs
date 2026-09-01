@@ -225,33 +225,6 @@ impl<'a> PlayerValidator<'a> {
             }
         }
 
-        let is_vanished = if role == RoleType::Phantom && !is_dead {
-            let mut vanished = false;
-            if data_ptr != 0 {
-                if let Ok(role_ptr) = self.reader.read_pointer(data_ptr + 0x4C) {
-                    if role_ptr != 0 && self.reader.process().is_valid_pointer(role_ptr) {
-                        for off in 0x18_u64..=0x48 {
-                            if let Ok(1) = self.reader.read_u8(role_ptr + off) {
-                                vanished = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if !vanished && pc != 0 {
-                for off in [0x49_u64, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54] {
-                    if let Ok(1) = self.reader.read_u8(pc + off) {
-                        vanished = true;
-                        break;
-                    }
-                }
-            }
-            vanished
-        } else {
-            false
-        };
-
         Ok(PlayerSnapshot {
             name,
             color_id,
@@ -268,7 +241,6 @@ impl<'a> PlayerValidator<'a> {
             shapeshift_target,
             voted_for: None,
             was_ejected,
-            is_vanished,
         })
     }
 

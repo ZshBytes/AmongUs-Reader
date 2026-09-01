@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use parking_lot::RwLock;
 
 use crate::game::player::PlayerSnapshot;
-use crate::game::role::{color_name, RoleType};
+use crate::game::role::color_name;
 use crate::game::scanner::ScanSnapshot;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,13 +20,6 @@ pub struct DisguiseEvent {
     pub message: String,
     pub morpher_name: String,
     pub target_name: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct VanishEvent {
-    pub message: String,
-    pub player_name: String,
-    pub is_vanished: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +53,6 @@ pub struct OverlayStatus {
     pub players: Vec<PlayerSnapshot>,
     pub kill_events: Vec<KillEvent>,
     pub disguise_events: Vec<DisguiseEvent>,
-    pub vanish_events: Vec<VanishEvent>,
     pub dead_bodies: Vec<DeadBodyMarker>,
     pub last_kill_time: Option<u64>,
     pub log_config: ConsoleLogConfig,
@@ -78,7 +70,6 @@ impl Default for OverlayStatus {
             players: Vec::new(),
             kill_events: Vec::new(),
             disguise_events: Vec::new(),
-            vanish_events: Vec::new(),
             dead_bodies: Vec::new(),
             last_kill_time: None,
             log_config: ConsoleLogConfig::default(),
@@ -241,7 +232,6 @@ impl SharedGameState {
         if state.game_state == 1 && snapshot.game_state == 2 {
             state.kill_events.clear();
             state.disguise_events.clear();
-            state.vanish_events.clear();
             state.dead_bodies.clear();
             state.last_kill_time = None;
         }
@@ -298,41 +288,6 @@ impl SharedGameState {
                     state.disguise_events.insert(0, event);
                     if state.disguise_events.len() > 300 {
                         state.disguise_events.truncate(300);
-                    }
-                }
-
-                // Detect Phantom Vanish / Unvanish transitions
-                if curr.role == RoleType::Phantom && !curr.is_dead {
-                    let prev_vanished = prev_entry.map(|p| p.is_vanished).unwrap_or(false);
-
-                    if curr.is_vanished && !prev_vanished {
-                        let msg = format!("{} vanished", curr.name);
-                        if state.log_config.log_kills {
-                            println!("[VANISH] {msg}");
-                        }
-                        let event = VanishEvent {
-                            message: msg,
-                            player_name: curr.name.clone(),
-                            is_vanished: true,
-                        };
-                        state.vanish_events.insert(0, event);
-                        if state.vanish_events.len() > 300 {
-                            state.vanish_events.truncate(300);
-                        }
-                    } else if !curr.is_vanished && prev_vanished {
-                        let msg = format!("{} unvanished", curr.name);
-                        if state.log_config.log_kills {
-                            println!("[UNVANISH] {msg}");
-                        }
-                        let event = VanishEvent {
-                            message: msg,
-                            player_name: curr.name.clone(),
-                            is_vanished: false,
-                        };
-                        state.vanish_events.insert(0, event);
-                        if state.vanish_events.len() > 300 {
-                            state.vanish_events.truncate(300);
-                        }
                     }
                 }
             }
@@ -438,14 +393,13 @@ impl SharedGameState {
         let mut state = self.inner.write();
         state.kill_events.clear();
         state.disguise_events.clear();
-        state.vanish_events.clear();
         state.dead_bodies.clear();
         state.last_kill_time = None;
         for p in &mut state.players {
             p.shapeshifting = false;
             p.shapeshift_target = None;
         }
-        println!("[LOGS] Cleared match kills, dead bodies, shapeshifts, and vanish events.");
+        println!("[LOGS] Cleared match kills, dead bodies, and shapeshifts.");
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -499,14 +453,6 @@ impl SharedGameState {
             lines.push(String::new());
             lines.push("Shapeshifts:".into());
             for event in state.disguise_events.iter().rev() {
-                lines.push(format!("- {}", event.message));
-            }
-        }
-
-        if !state.vanish_events.is_empty() {
-            lines.push(String::new());
-            lines.push("Phantom Vanishes:".into());
-            for event in state.vanish_events.iter().rev() {
                 lines.push(format!("- {}", event.message));
             }
         }
