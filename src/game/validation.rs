@@ -225,6 +225,12 @@ impl<'a> PlayerValidator<'a> {
             }
         }
 
+        // Read tasks progress (completed / total)
+        let (tasks_completed, tasks_total) = self.read_player_tasks(data_ptr);
+
+        // Read live vote if in meeting
+        let voted_for = self.read_player_vote(data_ptr);
+
         Ok(PlayerSnapshot {
             name,
             color_id,
@@ -239,9 +245,80 @@ impl<'a> PlayerValidator<'a> {
             in_vent,
             shapeshifting,
             shapeshift_target,
-            voted_for: None,
+            voted_for,
             was_ejected,
+            tasks_completed,
+            tasks_total,
+            kill_cooldown: None,
         })
+    }
+
+    /// Read completed & total task counts from NetworkedPlayerInfo.Tasks (List<PlayerTaskInfo>)
+    fn read_player_tasks(&self, data_ptr: u64) -> (u8, u8) {
+        if data_ptr == 0 {
+            return (0, 0);
+        }
+
+        for list_off in [0x44_u64, 0x40, 0x3C, 0x48] {
+            let list_ptr = match self.reader.read_pointer(data_ptr + list_off) {
+                Ok(p) if p != 0 && self.reader.process().is_valid_pointer(p) => p,
+                _ => continue,
+            };
+
+            let size = match self.reader.read_i32(list_ptr + 0x0C) {
+                Ok(s) if s > 0 && s <= 15 => s as usize,
+                _ => continue,
+            };
+
+            let items_ptr = match self.reader.read_pointer(list_ptr + 0x08) {
+                Ok(p) if p != 0 && self.reader.process().is_valid_pointer(p) => p,
+                _ => continue,
+            };
+
+            let mut completed = 0u8;
+            let mut total = 0u8;
+
+            for i in 0..size {
+                let task_ptr = match self.reader.read_pointer(items_ptr + 0x10 + (i as u64) * 4) {
+                    Ok(p) if p != 0 && self.reader.process().is_valid_pointer(p) => p,
+                    _ => continue,
+                };
+
+                total += 1;
+                // Check Complete (bool) at +0x0C, +0x10, +0x14
+                for comp_off in [0x0C_u64, 0x10, 0x14, 0x18] {
+                    if let Ok(1) = self.reader.read_u8(task_ptr + comp_off) {
+                        completed += 1;
+                        break;
+                    }
+                }
+            }
+
+            if total > 0 {
+                return (completed, total);
+            }
+        }
+
+        (0, 0)
+    }
+
+    /// Read live vote target from NetworkedPlayerInfo
+    fn read_player_vote(&self, data_ptr: u64) -> Option<i16> {
+        if data_ptr == 0 {
+            return None;
+        }
+
+        for vote_off in [0x58_u64, 0x5C, 0x60, 0x54] {
+            if let Ok(b) = self.reader.read_u8(data_ptr + vote_off) {
+                if (0..=15).contains(&b) {
+                    return Some(b as i16);
+                } else if b == 254 || b == 253 {
+                    return Some(-1); // Skipped vote
+                }
+            }
+        }
+
+        None
     }
 
     /// Read player 2D world position from CustomNetworkTransform.

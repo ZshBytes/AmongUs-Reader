@@ -339,9 +339,22 @@ impl SharedGameState {
         state.connected = snapshot.connected;
         state.in_active_match = snapshot.in_active_match;
         state.game_state = snapshot.game_state;
-        state.players = snapshot.players.clone();
+        
+        let mut players = snapshot.players.clone();
+        let now = now_ms();
+        if snapshot.game_state == 2 {
+            let base_reset = state.last_kill_time.unwrap_or(state.last_update_ms);
+            let elapsed = (now.saturating_sub(base_reset)) as f32 / 1000.0;
+            let cooldown = (25.0_f32 - elapsed).max(0.0);
+            for p in &mut players {
+                if p.role.is_impostor_team() && !p.is_dead {
+                    p.kill_cooldown = Some(cooldown);
+                }
+            }
+        }
+        state.players = players;
         state.status_message = snapshot.status_message.clone();
-        state.last_update_ms = now_ms();
+        state.last_update_ms = now;
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 

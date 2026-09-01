@@ -60,6 +60,8 @@ pub struct RadarState {
     pub scale: f32,
     pub show_tracers: bool,
     pub show_warnings: bool,
+    pub show_vents: bool,
+    pub pan_offset: (f32, f32),
     pub filter: PlayerFilter,
     pub origin: LineOrigin,
     pub map: RadarMap,
@@ -76,6 +78,8 @@ impl std::fmt::Debug for RadarState {
             .field("scale", &self.scale)
             .field("show_tracers", &self.show_tracers)
             .field("show_warnings", &self.show_warnings)
+            .field("show_vents", &self.show_vents)
+            .field("pan_offset", &self.pan_offset)
             .field("filter", &self.filter)
             .field("origin", &self.origin)
             .field("map", &self.map)
@@ -91,6 +95,8 @@ impl Default for RadarState {
             scale: 90.0,
             show_tracers: true,
             show_warnings: true,
+            show_vents: true,
+            pan_offset: (0.0, 0.0),
             filter: PlayerFilter::All,
             origin: LineOrigin::LocalPlayer,
             map: RadarMap::None,
@@ -475,6 +481,32 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
 
         ui.add_space(2.0);
 
+        let (vent_text, vent_color) = if radar.show_vents {
+            ("Vents: ON", Color32::from_rgb(255, 175, 50))
+        } else {
+            ("Vents: OFF", Color32::from_rgb(160, 160, 160))
+        };
+        if ui
+            .button(RichText::new(vent_text).small().color(vent_color))
+            .on_hover_text("Toggle Skeld vent network path lines on radar")
+            .clicked()
+        {
+            radar.show_vents = !radar.show_vents;
+        }
+
+        ui.add_space(2.0);
+
+        if radar.pan_offset != (0.0, 0.0) {
+            if ui
+                .button(RichText::new("🎯 Center").small().color(Color32::from_rgb(100, 220, 255)))
+                .on_hover_text("Reset radar pan back to player center")
+                .clicked()
+            {
+                radar.pan_offset = (0.0, 0.0);
+            }
+            ui.add_space(2.0);
+        }
+
         let origin_text = match radar.origin {
             LineOrigin::LocalPlayer => "Origin: Local",
             LineOrigin::BottomCenter => "Origin: Bottom",
@@ -572,6 +604,47 @@ fn draw_map_blueprint(
     );
 }
 
+fn draw_vent_network(painter: &egui::Painter, pos_to_screen: &impl Fn(f32, f32) -> Pos2) {
+    // 4 Skeld Vent Networks
+    let networks: &[&[(f32, f32)]] = &[
+        // Network 1: Cafeteria - Admin - Hallway
+        &[(1.6, 2.0), (3.4, -7.5), (0.0, -8.0), (1.6, 2.0)],
+        // Network 2: Medbay - Upper Engine - Lower Engine
+        &[(-9.0, -2.5), (-12.5, 4.0), (-12.5, -8.5), (-9.0, -2.5)],
+        // Network 3: Reactor Top - Reactor Bottom - Security - Electrical
+        &[(-20.5, 2.0), (-13.5, -2.5), (-20.5, -5.0), (-20.5, 2.0), (-13.5, -2.5), (-7.5, -8.5)],
+        // Network 4: Weapons - Navigation Top - Navigation Bottom - Shields
+        &[(9.0, 3.5), (18.5, -1.0), (18.5, -6.5), (8.5, -13.0), (9.0, 3.5)],
+    ];
+
+    let line_col = Color32::from_rgba_unmultiplied(255, 175, 50, 120);
+    let vent_fill = Color32::from_rgba_unmultiplied(45, 25, 10, 220);
+    let vent_stroke = Color32::from_rgb(255, 175, 50);
+
+    for path in networks {
+        for window in path.windows(2) {
+            let p1 = pos_to_screen(window[0].0, window[0].1);
+            let p2 = pos_to_screen(window[1].0, window[1].1);
+            painter.line_segment([p1, p2], Stroke::new(1.3_f32, line_col));
+        }
+
+        for &(vx, vy) in *path {
+            let pt = pos_to_screen(vx, vy);
+            let r = 4.5;
+            let vent_rect = egui::Rect::from_center_size(pt, Vec2::new(r * 2.0, r * 2.0));
+            painter.rect_filled(vent_rect, 1.5, vent_fill);
+            painter.rect_stroke(vent_rect, 1.5, Stroke::new(1.0_f32, vent_stroke));
+            painter.text(
+                pt,
+                Align2::CENTER_CENTER,
+                "V",
+                FontId::proportional(7.0),
+                Color32::from_rgb(255, 210, 120),
+            );
+        }
+    }
+}
+
 fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarState) {
     let now = Instant::now();
     let dt = if let Some(last) = radar.last_frame {
@@ -605,8 +678,25 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     let avail_w = ui.available_width();
     let avail_h = ui.available_height().max(240.0);
     let size = Vec2::new(avail_w, avail_h);
-    let (rect, _response) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
+
+    // Mouse drag panning
+    if response.dragged() {
+        let delta = response.drag_delta();
+        radar.pan_offset.0 += delta.x;
+        radar.pan_offset.1 += delta.y;
+    }
+    if response.double_clicked() {
+        radar.pan_offset = (0.0, 0.0);
+    }
+    // Mouse wheel zoom
+    if response.hovered() {
+        let scroll = ui.input(|i| i.raw_scroll_delta.y);
+        if scroll.abs() > 0.1 {
+            radar.scale = (radar.scale * (1.0 + scroll * 0.0015)).clamp(20.0, 300.0);
+        }
+    }
 
     painter.rect_filled(rect, 4.0, radar.theme.canvas_color32());
     painter.rect_stroke(
@@ -615,7 +705,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         Stroke::new(1.0_f32, radar.theme.border_color32()),
     );
 
-    let center = rect.center();
+    let center = Pos2::new(rect.center().x + radar.pan_offset.0, rect.center().y + radar.pan_offset.1);
     let is_map_mode = radar.map != RadarMap::None;
 
     let (map_cx, map_cy, map_w, map_h) = match radar.map {
@@ -704,6 +794,11 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         &pos_to_screen,
         rect,
     );
+
+    // Draw Skeld Vent Networks if enabled
+    if radar.show_vents {
+        draw_vent_network(&painter, &pos_to_screen);
+    }
 
     let origin = if is_map_mode {
         pos_to_screen(local_pos.0, local_pos.1)
@@ -896,6 +991,20 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             String::new()
         };
 
+        let cd_str = if is_imp {
+            if let Some(cd) = player.kill_cooldown {
+                if cd <= 0.05 {
+                    " [READY]".to_string()
+                } else {
+                    format!(" [{:.0}s]", cd)
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         let label_text = if player.shapeshifting {
             let morph_target = if let Some(tid) = player.shapeshift_target {
                 state
@@ -907,11 +1016,11 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             } else {
                 "Target"
             };
-            format!("{} [SS: {}]{}", player.name, morph_target, dist_str)
+            format!("{} [SS: {}]{}{}", player.name, morph_target, cd_str, dist_str)
         } else if player.in_vent {
-            format!("{} [VENT]{}", player.name, dist_str)
+            format!("{} [VENT]{}{}", player.name, cd_str, dist_str)
         } else {
-            format!("{}{}", player.name, dist_str)
+            format!("{}{}{}", player.name, cd_str, dist_str)
         };
 
         let text_color = if player.shapeshifting {
@@ -1044,7 +1153,7 @@ fn draw_player_card(
                 };
                 ui.label(name_text);
 
-                // Role & Distance line (No Pos)
+                // Role & Distance line
                 ui.horizontal(|ui| {
                     ui.label(color_name(player.color_id));
                     ui.label("|");
@@ -1064,6 +1173,44 @@ fn draw_player_card(
                     }
                 });
 
+                // Task progress or Fake Tasks
+                if player.role.is_impostor_team() {
+                    ui.label(
+                        RichText::new("[IMPOSTOR: FAKE TASKS]")
+                            .strong()
+                            .small()
+                            .color(Color32::from_rgb(255, 120, 60)),
+                    );
+                    if let Some(cd) = player.kill_cooldown {
+                        if cd <= 0.05 {
+                            ui.label(
+                                RichText::new("⚡ [KILL READY]")
+                                    .strong()
+                                    .small()
+                                    .color(Color32::from_rgb(255, 60, 60)),
+                            );
+                        } else {
+                            ui.label(
+                                RichText::new(format!("⏳ [KILL CD: {:.1}s]", cd))
+                                    .strong()
+                                    .small()
+                                    .color(Color32::from_rgb(255, 185, 60)),
+                            );
+                        }
+                    }
+                } else if player.tasks_total > 0 {
+                    let pct = (player.tasks_completed as f32 / player.tasks_total as f32 * 100.0).clamp(0.0, 100.0);
+                    let task_col = if player.tasks_completed >= player.tasks_total {
+                        Color32::from_rgb(80, 240, 140)
+                    } else {
+                        Color32::from_rgb(120, 200, 255)
+                    };
+                    ui.label(
+                        RichText::new(format!("Tasks: {}/{} ({:.0}%)", player.tasks_completed, player.tasks_total, pct))
+                            .small()
+                            .color(task_col),
+                    );
+                }
 
                 if player.in_vent {
                     ui.label(
@@ -1140,6 +1287,59 @@ fn draw_player_list(
         });
     });
     ui.add_space(3.0);
+
+    // Live Meeting Vote Matrix Tracker
+    if state.game_state == 3 {
+        let voters: Vec<_> = state.players.iter().filter(|p| !p.is_dead && !p.disconnected).collect();
+        let votes_cast = voters.iter().filter(|p| p.voted_for.is_some()).count();
+
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("🗳 Meeting Live Votes ({}/{})", votes_cast, voters.len()))
+                        .strong()
+                        .color(Color32::from_rgb(100, 210, 255)),
+                );
+            });
+            ui.add_space(2.0);
+
+            for voter in &voters {
+                ui.horizontal(|ui| {
+                    let (r, g, b) = color_rgb(voter.color_id);
+                    ui.label(RichText::new(&voter.name).color(Color32::from_rgb(r, g, b)).strong().small());
+                    ui.label(RichText::new("➜").small().color(Color32::from_rgb(160, 160, 160)));
+
+                    match voter.voted_for {
+                        Some(target_id) if target_id == -1 => {
+                            ui.label(RichText::new("[SKIPPED]").strong().small().color(Color32::from_rgb(180, 180, 180)));
+                        }
+                        Some(target_id) => {
+                            if let Some(target) = state.players.iter().find(|p| p.player_id as i16 == target_id) {
+                                let (tr, tg, tb) = color_rgb(target.color_id);
+                                ui.label(
+                                    RichText::new(format!("[Voted: {}]", target.name))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(tr, tg, tb)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new(format!("[Voted: #{}]", target_id))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(255, 180, 100)),
+                                );
+                            }
+                        }
+                        None => {
+                            ui.label(RichText::new("Thinking...").italics().small().color(Color32::from_rgb(130, 140, 150)));
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(6.0);
+    }
 
     let avail_w = ui.available_width();
     let num_cols = if avail_w >= 640.0 {
