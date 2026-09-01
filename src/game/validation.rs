@@ -230,28 +230,17 @@ impl<'a> PlayerValidator<'a> {
             if data_ptr != 0 {
                 if let Ok(role_ptr) = self.reader.read_pointer(data_ptr + 0x4C) {
                     if role_ptr != 0 && self.reader.process().is_valid_pointer(role_ptr) {
-                        let b1 = self.reader.read_u8(role_ptr + 0x14).unwrap_or(0) == 1;
-                        let b2 = self.reader.read_u8(role_ptr + 0x18).unwrap_or(0) == 1;
-                        let b3 = self.reader.read_u8(role_ptr + 0x1C).unwrap_or(0) == 1;
-                        let b4 = self.reader.read_u8(role_ptr + 0x20).unwrap_or(0) == 1;
-                        let b5 = self.reader.read_u8(role_ptr + 0x24).unwrap_or(0) == 1;
-                        let b6 = self.reader.read_u8(role_ptr + 0x28).unwrap_or(0) == 1;
-                        let b7 = self.reader.read_u8(role_ptr + 0x2C).unwrap_or(0) == 1;
-                        let b8 = self.reader.read_u8(role_ptr + 0x30).unwrap_or(0) == 1;
-
-                        let t1 = self.reader.read_f32(role_ptr + 0x18).unwrap_or(0.0);
-                        let t2 = self.reader.read_f32(role_ptr + 0x1C).unwrap_or(0.0);
-                        let t3 = self.reader.read_f32(role_ptr + 0x20).unwrap_or(0.0);
-                        let t4 = self.reader.read_f32(role_ptr + 0x24).unwrap_or(0.0);
-                        let t5 = self.reader.read_f32(role_ptr + 0x28).unwrap_or(0.0);
-
-                        let timer_active = (t1 > 0.05 && t1 < 45.0)
-                            || (t2 > 0.05 && t2 < 45.0)
-                            || (t3 > 0.05 && t3 < 45.0)
-                            || (t4 > 0.05 && t4 < 45.0)
-                            || (t5 > 0.05 && t5 < 45.0);
-
-                        vanished = b1 || b2 || b3 || b4 || b5 || b6 || b7 || b8 || timer_active;
+                        for off in [0x28_u64, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x34, 0x38] {
+                            if let Ok(b) = self.reader.read_u8(role_ptr + off) {
+                                if b == 1 {
+                                    let next = self.reader.read_u8(role_ptr + off + 1).unwrap_or(0);
+                                    if next <= 1 {
+                                        vanished = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -417,7 +406,27 @@ impl<'a> PlayerValidator<'a> {
                 raw
             };
             let trimmed = base.trim();
-            if trimmed.is_empty() || trimmed.len() > self.validation.max_player_name_len {
+            let lower = trimmed.to_ascii_lowercase();
+            if trimmed.is_empty()
+                || trimmed.len() > self.validation.max_player_name_len
+                || lower.starts_with("hat_")
+                || lower.starts_with("skin_")
+                || lower.starts_with("pet_")
+                || lower.starts_with("visor_")
+                || lower.starts_with("nameplate_")
+                || lower.starts_with("role_")
+                || lower == "phantom"
+                || lower == "shapeshifter"
+                || lower == "impostor"
+                || lower == "crewmate"
+                || lower == "engineer"
+                || lower == "scientist"
+                || lower == "guardianangel"
+                || lower == "noisemaker"
+                || lower == "tracker"
+                || lower == "detective"
+                || lower == "viper"
+            {
                 return None;
             }
             if is_valid(trimmed) {
@@ -551,14 +560,25 @@ impl<'a> PlayerValidator<'a> {
             if let Ok(raw) = read_mono_string(self.reader, name_ptr, string_layout, self.validation)
             {
                 let trimmed = raw.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if trimmed.starts_with("hat_")
-                    || trimmed.starts_with("skin_")
-                    || trimmed.starts_with("pet_")
-                    || trimmed.starts_with("visor_")
-                    || trimmed.starts_with("nameplate_")
+                let lower = trimmed.to_ascii_lowercase();
+                if trimmed.is_empty()
+                    || lower.starts_with("hat_")
+                    || lower.starts_with("skin_")
+                    || lower.starts_with("pet_")
+                    || lower.starts_with("visor_")
+                    || lower.starts_with("nameplate_")
+                    || lower.starts_with("role_")
+                    || lower == "phantom"
+                    || lower == "shapeshifter"
+                    || lower == "impostor"
+                    || lower == "crewmate"
+                    || lower == "engineer"
+                    || lower == "scientist"
+                    || lower == "guardianangel"
+                    || lower == "noisemaker"
+                    || lower == "tracker"
+                    || lower == "detective"
+                    || lower == "viper"
                 {
                     continue;
                 }
