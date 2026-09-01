@@ -59,6 +59,7 @@ pub enum RadarMap {
 pub struct RadarState {
     pub scale: f32,
     pub show_tracers: bool,
+    pub show_warnings: bool,
     pub filter: PlayerFilter,
     pub origin: LineOrigin,
     pub map: RadarMap,
@@ -74,6 +75,7 @@ impl std::fmt::Debug for RadarState {
         f.debug_struct("RadarState")
             .field("scale", &self.scale)
             .field("show_tracers", &self.show_tracers)
+            .field("show_warnings", &self.show_warnings)
             .field("filter", &self.filter)
             .field("origin", &self.origin)
             .field("map", &self.map)
@@ -88,6 +90,7 @@ impl Default for RadarState {
         Self {
             scale: 90.0,
             show_tracers: true,
+            show_warnings: true,
             filter: PlayerFilter::All,
             origin: LineOrigin::LocalPlayer,
             map: RadarMap::None,
@@ -440,6 +443,21 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
 
         ui.add_space(2.0);
 
+        let (alert_text, alert_color) = if radar.show_warnings {
+            ("Alerts: ON", Color32::from_rgb(255, 100, 100))
+        } else {
+            ("Alerts: OFF", Color32::from_rgb(160, 160, 160))
+        };
+        if ui
+            .button(RichText::new(alert_text).small().color(alert_color))
+            .on_hover_text("Toggle threat danger and dead body warning banners on radar")
+            .clicked()
+        {
+            radar.show_warnings = !radar.show_warnings;
+        }
+
+        ui.add_space(2.0);
+
         let (map_text, map_color) = match radar.map {
             RadarMap::None => ("Map: None", Color32::from_rgb(170, 170, 170)),
             RadarMap::Skeld => ("Map: The Skeld", Color32::from_rgb(80, 200, 255)),
@@ -733,58 +751,60 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     // Draw Threat Alert Banners
     let mut top_offset = 6.0;
 
-    // Danger Alert Banner if impostor nearby
-    if let Some(imp) = closest_threat {
-        if imp.distance <= 5.5 && !local_player.map(|p| p.role.is_impostor_team()).unwrap_or(false) {
-            let alert_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
-                Vec2::new(rect.width() - 12.0, 16.0),
-            );
-            painter.rect_filled(
-                alert_rect,
-                2.5,
-                Color32::from_rgba_unmultiplied(180, 20, 20, 190),
-            );
-            painter.rect_stroke(
-                alert_rect,
-                2.5,
-                Stroke::new(1.0_f32, Color32::from_rgb(255, 60, 60)),
-            );
-            painter.text(
-                alert_rect.center(),
-                Align2::CENTER_CENTER,
-                format!("⚠ DANGER: Impostor Nearby! {} ({:.1}m)", imp.name, imp.distance),
-                FontId::proportional(10.0),
-                Color32::WHITE,
-            );
-            top_offset += 19.0;
+    if radar.show_warnings {
+        // Danger Alert Banner if impostor nearby
+        if let Some(imp) = closest_threat {
+            if imp.distance <= 5.5 && !local_player.map(|p| p.role.is_impostor_team()).unwrap_or(false) {
+                let alert_rect = egui::Rect::from_min_size(
+                    Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
+                    Vec2::new(rect.width() - 12.0, 16.0),
+                );
+                painter.rect_filled(
+                    alert_rect,
+                    2.5,
+                    Color32::from_rgba_unmultiplied(180, 20, 20, 190),
+                );
+                painter.rect_stroke(
+                    alert_rect,
+                    2.5,
+                    Stroke::new(1.0_f32, Color32::from_rgb(255, 60, 60)),
+                );
+                painter.text(
+                    alert_rect.center(),
+                    Align2::CENTER_CENTER,
+                    format!("⚠ DANGER: Impostor Nearby! {} ({:.1}m)", imp.name, imp.distance),
+                    FontId::proportional(10.0),
+                    Color32::WHITE,
+                );
+                top_offset += 19.0;
+            }
         }
-    }
 
-    // Dead body detected banner
-    if let Some((body, b_dist)) = closest_body {
-        if b_dist <= 25.0 {
-            let body_alert_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
-                Vec2::new(rect.width() - 12.0, 15.0),
-            );
-            painter.rect_filled(
-                body_alert_rect,
-                2.5,
-                Color32::from_rgba_unmultiplied(120, 30, 30, 160),
-            );
-            painter.rect_stroke(
-                body_alert_rect,
-                2.5,
-                Stroke::new(0.9_f32, Color32::from_rgb(255, 90, 90)),
-            );
-            painter.text(
-                body_alert_rect.center(),
-                Align2::CENTER_CENTER,
-                format!("💀 DEAD BODY: {} ({:.1}m)", body.victim_name, b_dist),
-                FontId::proportional(9.5),
-                Color32::from_rgb(255, 200, 200),
-            );
+        // Dead body detected banner
+        if let Some((body, b_dist)) = closest_body {
+            if b_dist <= 25.0 {
+                let body_alert_rect = egui::Rect::from_min_size(
+                    Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
+                    Vec2::new(rect.width() - 12.0, 15.0),
+                );
+                painter.rect_filled(
+                    body_alert_rect,
+                    2.5,
+                    Color32::from_rgba_unmultiplied(120, 30, 30, 160),
+                );
+                painter.rect_stroke(
+                    body_alert_rect,
+                    2.5,
+                    Stroke::new(0.9_f32, Color32::from_rgb(255, 90, 90)),
+                );
+                painter.text(
+                    body_alert_rect.center(),
+                    Align2::CENTER_CENTER,
+                    format!("💀 DEAD BODY: {} ({:.1}m)", body.victim_name, b_dist),
+                    FontId::proportional(9.5),
+                    Color32::from_rgb(255, 200, 200),
+                );
+            }
         }
     }
 
