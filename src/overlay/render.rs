@@ -60,7 +60,6 @@ pub struct RadarState {
     pub scale: f32,
     pub show_tracers: bool,
     pub show_warnings: bool,
-    pub show_vents: bool,
     pub pan_offset: (f32, f32),
     pub filter: PlayerFilter,
     pub origin: LineOrigin,
@@ -78,7 +77,6 @@ impl std::fmt::Debug for RadarState {
             .field("scale", &self.scale)
             .field("show_tracers", &self.show_tracers)
             .field("show_warnings", &self.show_warnings)
-            .field("show_vents", &self.show_vents)
             .field("pan_offset", &self.pan_offset)
             .field("filter", &self.filter)
             .field("origin", &self.origin)
@@ -95,7 +93,6 @@ impl Default for RadarState {
             scale: 90.0,
             show_tracers: true,
             show_warnings: true,
-            show_vents: true,
             pan_offset: (0.0, 0.0),
             filter: PlayerFilter::All,
             origin: LineOrigin::LocalPlayer,
@@ -481,20 +478,6 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
 
         ui.add_space(2.0);
 
-        let (vent_text, vent_color) = if radar.show_vents {
-            ("Vents: ON", Color32::from_rgb(255, 175, 50))
-        } else {
-            ("Vents: OFF", Color32::from_rgb(160, 160, 160))
-        };
-        if ui
-            .button(RichText::new(vent_text).small().color(vent_color))
-            .on_hover_text("Toggle Skeld vent network path lines on radar")
-            .clicked()
-        {
-            radar.show_vents = !radar.show_vents;
-        }
-
-        ui.add_space(2.0);
 
         if radar.pan_offset != (0.0, 0.0) {
             if ui
@@ -602,47 +585,6 @@ fn draw_map_blueprint(
         egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
         Color32::WHITE,
     );
-}
-
-fn draw_vent_network(painter: &egui::Painter, pos_to_screen: &impl Fn(f32, f32) -> Pos2) {
-    // 4 Skeld Vent Networks
-    let networks: &[&[(f32, f32)]] = &[
-        // Network 1: Cafeteria - Admin - Hallway
-        &[(1.6, 2.0), (3.4, -7.5), (0.0, -8.0), (1.6, 2.0)],
-        // Network 2: Medbay - Upper Engine - Lower Engine
-        &[(-9.0, -2.5), (-12.5, 4.0), (-12.5, -8.5), (-9.0, -2.5)],
-        // Network 3: Reactor Top - Reactor Bottom - Security - Electrical
-        &[(-20.5, 2.0), (-13.5, -2.5), (-20.5, -5.0), (-20.5, 2.0), (-13.5, -2.5), (-7.5, -8.5)],
-        // Network 4: Weapons - Navigation Top - Navigation Bottom - Shields
-        &[(9.0, 3.5), (18.5, -1.0), (18.5, -6.5), (8.5, -13.0), (9.0, 3.5)],
-    ];
-
-    let line_col = Color32::from_rgba_unmultiplied(255, 175, 50, 120);
-    let vent_fill = Color32::from_rgba_unmultiplied(45, 25, 10, 220);
-    let vent_stroke = Color32::from_rgb(255, 175, 50);
-
-    for path in networks {
-        for window in path.windows(2) {
-            let p1 = pos_to_screen(window[0].0, window[0].1);
-            let p2 = pos_to_screen(window[1].0, window[1].1);
-            painter.line_segment([p1, p2], Stroke::new(1.3_f32, line_col));
-        }
-
-        for &(vx, vy) in *path {
-            let pt = pos_to_screen(vx, vy);
-            let r = 4.5;
-            let vent_rect = egui::Rect::from_center_size(pt, Vec2::new(r * 2.0, r * 2.0));
-            painter.rect_filled(vent_rect, 1.5, vent_fill);
-            painter.rect_stroke(vent_rect, 1.5, Stroke::new(1.0_f32, vent_stroke));
-            painter.text(
-                pt,
-                Align2::CENTER_CENTER,
-                "V",
-                FontId::proportional(7.0),
-                Color32::from_rgb(255, 210, 120),
-            );
-        }
-    }
 }
 
 fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarState) {
@@ -795,10 +737,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         rect,
     );
 
-    // Draw Skeld Vent Networks if enabled
-    if radar.show_vents {
-        draw_vent_network(&painter, &pos_to_screen);
-    }
 
     let origin = if is_map_mode {
         pos_to_screen(local_pos.0, local_pos.1)
@@ -1288,58 +1226,6 @@ fn draw_player_list(
     });
     ui.add_space(3.0);
 
-    // Live Meeting Vote Matrix Tracker
-    if state.game_state == 3 {
-        let voters: Vec<_> = state.players.iter().filter(|p| !p.is_dead && !p.disconnected).collect();
-        let votes_cast = voters.iter().filter(|p| p.voted_for.is_some()).count();
-
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!("🗳 Meeting Live Votes ({}/{})", votes_cast, voters.len()))
-                        .strong()
-                        .color(Color32::from_rgb(100, 210, 255)),
-                );
-            });
-            ui.add_space(2.0);
-
-            for voter in &voters {
-                ui.horizontal(|ui| {
-                    let (r, g, b) = color_rgb(voter.color_id);
-                    ui.label(RichText::new(&voter.name).color(Color32::from_rgb(r, g, b)).strong().small());
-                    ui.label(RichText::new("➜").small().color(Color32::from_rgb(160, 160, 160)));
-
-                    match voter.voted_for {
-                        Some(target_id) if target_id == -1 => {
-                            ui.label(RichText::new("[SKIPPED]").strong().small().color(Color32::from_rgb(180, 180, 180)));
-                        }
-                        Some(target_id) => {
-                            if let Some(target) = state.players.iter().find(|p| p.player_id as i16 == target_id) {
-                                let (tr, tg, tb) = color_rgb(target.color_id);
-                                ui.label(
-                                    RichText::new(format!("[Voted: {}]", target.name))
-                                        .strong()
-                                        .small()
-                                        .color(Color32::from_rgb(tr, tg, tb)),
-                                );
-                            } else {
-                                ui.label(
-                                    RichText::new(format!("[Voted: #{}]", target_id))
-                                        .strong()
-                                        .small()
-                                        .color(Color32::from_rgb(255, 180, 100)),
-                                );
-                            }
-                        }
-                        None => {
-                            ui.label(RichText::new("Thinking...").italics().small().color(Color32::from_rgb(130, 140, 150)));
-                        }
-                    }
-                });
-            }
-        });
-        ui.add_space(6.0);
-    }
 
     let avail_w = ui.available_width();
     let num_cols = if avail_w >= 640.0 {

@@ -228,9 +228,6 @@ impl<'a> PlayerValidator<'a> {
         // Read tasks progress (completed / total)
         let (tasks_completed, tasks_total) = self.read_player_tasks(data_ptr);
 
-        // Read live vote if in meeting
-        let voted_for = self.read_player_vote(data_ptr);
-
         Ok(PlayerSnapshot {
             name,
             color_id,
@@ -245,7 +242,7 @@ impl<'a> PlayerValidator<'a> {
             in_vent,
             shapeshifting,
             shapeshift_target,
-            voted_for,
+            voted_for: None,
             was_ejected,
             tasks_completed,
             tasks_total,
@@ -300,25 +297,6 @@ impl<'a> PlayerValidator<'a> {
         }
 
         (0, 0)
-    }
-
-    /// Read live vote target from NetworkedPlayerInfo
-    fn read_player_vote(&self, data_ptr: u64) -> Option<i16> {
-        if data_ptr == 0 {
-            return None;
-        }
-
-        for vote_off in [0x58_u64, 0x5C, 0x60, 0x54] {
-            if let Ok(b) = self.reader.read_u8(data_ptr + vote_off) {
-                if (0..=15).contains(&b) {
-                    return Some(b as i16);
-                } else if b == 254 || b == 253 {
-                    return Some(-1); // Skipped vote
-                }
-            }
-        }
-
-        None
     }
 
     /// Read player 2D world position from CustomNetworkTransform.
