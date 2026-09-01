@@ -882,7 +882,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         painter.circle_stroke(target_pt, 5.0, Stroke::new(1.4_f32, outline_col));
 
         // Pulsating Aura for Phantom Vanish
-        if is_phantom {
+        if player.is_vanished {
             painter.circle_stroke(
                 target_pt,
                 8.5,
@@ -910,8 +910,8 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             String::new()
         };
 
-        let label_text = if is_phantom {
-            format!("{} [PHANTOM (VANISHED)]{}", player.name, dist_str)
+        let label_text = if player.is_vanished {
+            format!("{} [VANISHED]{}", player.name, dist_str)
         } else if player.shapeshifting {
             let morph_target = if let Some(tid) = player.shapeshift_target {
                 state
@@ -930,7 +930,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             format!("{}{}", player.name, dist_str)
         };
 
-        let text_color = if is_phantom {
+        let text_color = if player.is_vanished {
             Color32::from_rgb(220, 110, 255)
         } else if player.shapeshifting {
             Color32::from_rgb(255, 90, 120)
@@ -1082,9 +1082,9 @@ fn draw_player_card(
                     }
                 });
 
-                if player.role == RoleType::Phantom && !player.is_dead {
+                if player.is_vanished && !player.is_dead {
                     ui.label(
-                        RichText::new("[PHANTOM: INVISIBLE / VANISHED]")
+                        RichText::new("[VANISHED: INVISIBLE]")
                             .strong()
                             .small()
                             .color(Color32::from_rgb(210, 90, 255)),

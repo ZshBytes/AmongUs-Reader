@@ -226,17 +226,18 @@ impl<'a> PlayerValidator<'a> {
         }
 
         let is_vanished = if role == RoleType::Phantom && !is_dead {
-            let mut vanished = true;
+            let mut vanished = false;
             if data_ptr != 0 {
                 if let Ok(role_ptr) = self.reader.read_pointer(data_ptr + 0x4C) {
                     if role_ptr != 0 && self.reader.process().is_valid_pointer(role_ptr) {
-                        let b1 = self.reader.read_u8(role_ptr + 0x18).unwrap_or(0) == 1;
-                        let b2 = self.reader.read_u8(role_ptr + 0x1C).unwrap_or(0) == 1;
-                        let b3 = self.reader.read_u8(role_ptr + 0x20).unwrap_or(0) == 1;
-                        let b4 = self.reader.read_u8(role_ptr + 0x24).unwrap_or(0) == 1;
-                        let b5 = self.reader.read_u8(role_ptr + 0x28).unwrap_or(0) == 1;
-                        let b6 = self.reader.read_u8(role_ptr + 0x2C).unwrap_or(0) == 1;
-                        let b7 = self.reader.read_u8(role_ptr + 0x30).unwrap_or(0) == 1;
+                        let b1 = self.reader.read_u8(role_ptr + 0x14).unwrap_or(0) == 1;
+                        let b2 = self.reader.read_u8(role_ptr + 0x18).unwrap_or(0) == 1;
+                        let b3 = self.reader.read_u8(role_ptr + 0x1C).unwrap_or(0) == 1;
+                        let b4 = self.reader.read_u8(role_ptr + 0x20).unwrap_or(0) == 1;
+                        let b5 = self.reader.read_u8(role_ptr + 0x24).unwrap_or(0) == 1;
+                        let b6 = self.reader.read_u8(role_ptr + 0x28).unwrap_or(0) == 1;
+                        let b7 = self.reader.read_u8(role_ptr + 0x2C).unwrap_or(0) == 1;
+                        let b8 = self.reader.read_u8(role_ptr + 0x30).unwrap_or(0) == 1;
 
                         let t1 = self.reader.read_f32(role_ptr + 0x18).unwrap_or(0.0);
                         let t2 = self.reader.read_f32(role_ptr + 0x1C).unwrap_or(0.0);
@@ -244,23 +245,13 @@ impl<'a> PlayerValidator<'a> {
                         let t4 = self.reader.read_f32(role_ptr + 0x24).unwrap_or(0.0);
                         let t5 = self.reader.read_f32(role_ptr + 0x28).unwrap_or(0.0);
 
-                        let timer_active = (t1 > 0.01 && t1 < 100.0)
-                            || (t2 > 0.01 && t2 < 100.0)
-                            || (t3 > 0.01 && t3 < 100.0)
-                            || (t4 > 0.01 && t4 < 100.0)
-                            || (t5 > 0.01 && t5 < 100.0);
+                        let timer_active = (t1 > 0.05 && t1 < 45.0)
+                            || (t2 > 0.05 && t2 < 45.0)
+                            || (t3 > 0.05 && t3 < 45.0)
+                            || (t4 > 0.05 && t4 < 45.0)
+                            || (t5 > 0.05 && t5 < 45.0);
 
-                        let pc_flag = if pc != 0 {
-                            self.reader.read_u8(pc + 0x48).unwrap_or(0) == 1
-                                || self.reader.read_u8(pc + 0x4C).unwrap_or(0) == 1
-                                || self.reader.read_u8(pc + 0x4D).unwrap_or(0) == 1
-                                || self.reader.read_u8(pc + 0x4E).unwrap_or(0) == 1
-                                || self.reader.read_u8(pc + 0x4F).unwrap_or(0) == 1
-                        } else {
-                            false
-                        };
-
-                        vanished = b1 || b2 || b3 || b4 || b5 || b6 || b7 || timer_active || pc_flag;
+                        vanished = b1 || b2 || b3 || b4 || b5 || b6 || b7 || b8 || timer_active;
                     }
                 }
             }
