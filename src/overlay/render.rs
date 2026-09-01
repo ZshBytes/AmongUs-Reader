@@ -1061,174 +1061,219 @@ fn draw_player_card(
     radar: &RadarState,
     card_width: f32,
 ) {
-    ui.group(|ui| {
-        ui.set_width(card_width);
-        let (r, g, b) = color_rgb(player.color_id);
-        let player_color = Color32::from_rgb(r, g, b);
-        let role_col = radar.theme.role_color32(&player.role);
+    let (r, g, b) = color_rgb(player.color_id);
+    let player_color = Color32::from_rgb(r, g, b);
+    let is_imp = player.role.is_impostor_team();
+    let role_col = radar.theme.role_color32(&player.role);
 
-        ui.horizontal(|ui| {
-            let (sq_rect, _) = ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
-            ui.painter().rect_filled(sq_rect, 3.0, player_color);
-            ui.painter().rect_stroke(
-                sq_rect,
-                3.0,
-                Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 80)),
-            );
+    // Dynamic card border/fill styling
+    let card_bg = if player.is_dead {
+        Color32::from_rgba_unmultiplied(25, 25, 30, 200)
+    } else if player.is_local {
+        Color32::from_rgba_unmultiplied(20, 45, 60, 220)
+    } else if is_imp {
+        Color32::from_rgba_unmultiplied(50, 20, 25, 220)
+    } else {
+        Color32::from_rgba_unmultiplied(30, 32, 40, 220)
+    };
 
-            ui.vertical(|ui| {
+    let border_col = if player.is_dead {
+        Color32::from_rgba_unmultiplied(100, 100, 110, 80)
+    } else if player.is_local {
+        Color32::from_rgba_unmultiplied(60, 200, 255, 180)
+    } else if is_imp {
+        Color32::from_rgba_unmultiplied(255, 70, 70, 160)
+    } else {
+        Color32::from_rgba_unmultiplied(70, 80, 100, 120)
+    };
+
+    egui::Frame::none()
+        .fill(card_bg)
+        .stroke(Stroke::new(1.0_f32, border_col))
+        .rounding(6.0)
+        .inner_margin(6.0)
+        .show(ui, |ui| {
+            ui.set_width(card_width);
+
+            // Row 1: Player color badge + Name + [YOU] / [DEAD]
+            ui.horizontal(|ui| {
+                let (sq_rect, _) = ui.allocate_exact_size(Vec2::new(12.0, 12.0), Sense::hover());
+                ui.painter().rect_filled(sq_rect, 3.0, player_color);
+                ui.painter().rect_stroke(
+                    sq_rect,
+                    3.0,
+                    Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 120)),
+                );
+
                 let name_text = if player.is_dead {
-                    RichText::new(format!("{} (DEAD)", player.name))
+                    RichText::new(&player.name)
                         .strong()
                         .strikethrough()
-                        .color(Color32::from_rgb(240, 80, 80))
+                        .color(Color32::from_rgb(180, 180, 190))
                 } else if player.is_local {
-                    RichText::new(format!("{} [YOU]", player.name))
+                    RichText::new(&player.name)
                         .strong()
-                        .color(Color32::from_rgb(60, 220, 255))
+                        .color(Color32::from_rgb(80, 220, 255))
                 } else {
-                    RichText::new(&player.name).strong()
+                    RichText::new(&player.name).strong().color(Color32::WHITE)
                 };
                 ui.label(name_text);
 
-                // Role & Distance line
-                ui.horizontal(|ui| {
-                    ui.label(color_name(player.color_id));
-                    ui.label("|");
-                    ui.label(RichText::new(player.role.to_string()).color(role_col));
-                    if player.is_local {
-                        ui.label(
-                            RichText::new("[YOU]")
-                                .small()
-                                .color(Color32::from_rgb(130, 210, 240)),
-                        );
-                    } else {
-                        ui.label(
-                            RichText::new(format!("({:.1}m)", player.distance))
-                                .small()
-                                .color(Color32::from_rgb(180, 190, 210)),
-                        );
-                    }
-                });
+                if player.is_local {
+                    ui.label(RichText::new("YOU").small().strong().color(Color32::from_rgb(70, 210, 255)));
+                } else if player.is_dead {
+                    ui.label(RichText::new("DEAD").small().strong().color(Color32::from_rgb(240, 80, 80)));
+                }
+            });
 
-                // Task progress or Fake Tasks
-                if player.role.is_impostor_team() {
-                    ui.label(
-                        RichText::new("[IMPOSTOR: FAKE TASKS]")
-                            .strong()
-                            .small()
-                            .color(Color32::from_rgb(255, 120, 60)),
-                    );
+            ui.add_space(2.0);
+
+            // Row 2: Role badge + Color name + Distance
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(player.role.to_string())
+                        .small()
+                        .strong()
+                        .color(role_col),
+                );
+                ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                ui.label(RichText::new(color_name(player.color_id)).small().color(Color32::from_rgb(180, 190, 210)));
+
+                if !player.is_local {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("{:.1}m", player.distance))
+                                .small()
+                                .color(Color32::from_rgb(160, 180, 210)),
+                        );
+                    });
+                }
+            });
+
+            ui.add_space(2.0);
+
+            // Row 3: Tasks or Impostor Cooldown
+            if is_imp {
+                ui.horizontal(|ui| {
                     if let Some(cd) = player.kill_cooldown {
                         if cd <= 0.05 {
                             ui.label(
-                                RichText::new("⚡ [KILL READY]")
+                                RichText::new("⚡ READY TO KILL")
                                     .strong()
                                     .small()
                                     .color(Color32::from_rgb(255, 60, 60)),
                             );
                         } else {
                             ui.label(
-                                RichText::new(format!("⏳ [KILL CD: {:.1}s]", cd))
+                                RichText::new(format!("⏳ Kill CD: {:.1}s", cd))
                                     .strong()
                                     .small()
-                                    .color(Color32::from_rgb(255, 185, 60)),
+                                    .color(Color32::from_rgb(255, 180, 60)),
                             );
                         }
-                    }
-                } else if player.tasks_total > 0 {
-                    let pct = (player.tasks_completed as f32 / player.tasks_total as f32 * 100.0).clamp(0.0, 100.0);
-                    let task_col = if player.tasks_completed >= player.tasks_total {
-                        Color32::from_rgb(80, 240, 140)
                     } else {
-                        Color32::from_rgb(120, 200, 255)
-                    };
+                        ui.label(
+                            RichText::new("Impostor")
+                                .small()
+                                .color(Color32::from_rgb(255, 110, 90)),
+                        );
+                    }
+                });
+            } else if player.tasks_total > 0 {
+                let pct = (player.tasks_completed as f32 / player.tasks_total as f32 * 100.0).clamp(0.0, 100.0);
+                let task_col = if player.tasks_completed >= player.tasks_total {
+                    Color32::from_rgb(80, 240, 140)
+                } else {
+                    Color32::from_rgb(110, 200, 255)
+                };
+                ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(format!("Tasks: {}/{} ({:.0}%)", player.tasks_completed, player.tasks_total, pct))
                             .small()
                             .color(task_col),
                     );
-                }
+                });
+            }
 
-                if player.in_vent {
-                    ui.label(
-                        RichText::new("[IN VENT]")
-                            .strong()
-                            .small()
-                            .color(Color32::from_rgb(255, 140, 40)),
-                    );
-                }
+            // In Vent / Shapeshifting alerts
+            if player.in_vent {
+                ui.label(
+                    RichText::new("⚠️ [INSIDE VENT]")
+                        .strong()
+                        .small()
+                        .color(Color32::from_rgb(255, 140, 40)),
+                );
+            }
 
-                if player.shapeshifting {
-                    let morph_name = if let Some(tid) = player.shapeshift_target {
-                        state
-                            .players
-                            .iter()
-                            .find(|p| p.player_id == tid)
-                            .map(|p| p.name.as_str())
-                            .unwrap_or("Unknown")
-                    } else {
-                        "Target"
-                    };
-                    ui.label(
-                        RichText::new(format!("[SHAPESHIFTED AS: {morph_name}]"))
-                            .strong()
-                            .small()
-                            .color(Color32::from_rgb(255, 90, 120)),
-                    );
-                }
+            if player.shapeshifting {
+                let morph_name = if let Some(tid) = player.shapeshift_target {
+                    state
+                        .players
+                        .iter()
+                        .find(|p| p.player_id == tid)
+                        .map(|p| p.name.as_str())
+                        .unwrap_or("Unknown")
+                } else {
+                    "Target"
+                };
+                ui.label(
+                    RichText::new(format!("🎭 [SS: {morph_name}]"))
+                        .strong()
+                        .small()
+                        .color(Color32::from_rgb(255, 90, 130)),
+                );
+            }
 
-                if state.game_state == 3 && !player.is_dead {
-                    match player.voted_for {
-                        Some(target_id) if target_id == -1 => {
+            // Meeting Vote Badge
+            if state.game_state == 3 && !player.is_dead {
+                match player.voted_for {
+                    Some(target_id) if target_id == -1 => {
+                        ui.label(
+                            RichText::new("🗳 [Voted: SKIP]")
+                                .strong()
+                                .small()
+                                .color(Color32::from_rgb(200, 200, 200)),
+                        );
+                    }
+                    Some(target_id) => {
+                        if let Some(target) =
+                            state.players.iter().find(|p| p.player_id as i16 == target_id)
+                        {
+                            let (tr, tg, tb) = color_rgb(target.color_id);
                             ui.label(
-                                RichText::new("🗳 [VOTED: SKIP]")
+                                RichText::new(format!("🗳 [Voted: {}]", target.name))
                                     .strong()
                                     .small()
-                                    .color(Color32::from_rgb(200, 200, 200)),
+                                    .color(Color32::from_rgb(tr, tg, tb)),
                             );
-                        }
-                        Some(target_id) => {
-                            if let Some(target) =
-                                state.players.iter().find(|p| p.player_id as i16 == target_id)
-                            {
-                                let (tr, tg, tb) = color_rgb(target.color_id);
-                                ui.label(
-                                    RichText::new(format!("🗳 [VOTED: {}]", target.name))
-                                        .strong()
-                                        .small()
-                                        .color(Color32::from_rgb(tr, tg, tb)),
-                                );
-                            } else {
-                                ui.label(
-                                    RichText::new(format!("🗳 [VOTED: #{}]", target_id))
-                                        .strong()
-                                        .small()
-                                        .color(Color32::from_rgb(255, 180, 100)),
-                                );
-                            }
-                        }
-                        None => {
+                        } else {
                             ui.label(
-                                RichText::new("🗳 [VOTING: THINKING...]")
-                                    .italics()
+                                RichText::new(format!("🗳 [Voted: #{}]", target_id))
+                                    .strong()
                                     .small()
-                                    .color(Color32::from_rgb(130, 140, 150)),
+                                    .color(Color32::from_rgb(255, 180, 100)),
                             );
                         }
                     }
+                    None => {
+                        ui.label(
+                            RichText::new("🗳 [Thinking...]")
+                                .italics()
+                                .small()
+                                .color(Color32::from_rgb(130, 140, 150)),
+                        );
+                    }
                 }
+            }
 
-                if !player.friend_code.is_empty() {
-                    ui.label(
-                        RichText::new(format!("ID: {}", player.friend_code))
-                            .small()
-                            .color(Color32::from_rgb(150, 170, 200)),
-                    );
-                }
-            });
+            if !player.friend_code.is_empty() {
+                ui.label(
+                    RichText::new(format!("ID: {}", player.friend_code))
+                        .small()
+                        .color(Color32::from_rgb(140, 160, 190)),
+                );
+            }
         });
-    });
 }
 
 fn draw_player_list(
@@ -1239,7 +1284,7 @@ fn draw_player_list(
 ) {
     let num_players = state.players.len();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("Players ({num_players})")).strong());
+        ui.label(RichText::new(format!("Players ({num_players})")).strong().color(radar.theme.accent_color32()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .button(
@@ -1265,7 +1310,7 @@ fn draw_player_list(
             }
         });
     });
-    ui.add_space(3.0);
+    ui.add_space(4.0);
 
     // Meeting Live Votes Tracker (only during discussion / meeting)
     if state.game_state == 3 {
@@ -1276,82 +1321,86 @@ fn draw_player_list(
             .collect();
         let votes_cast = voters.iter().filter(|p| p.voted_for.is_some()).count();
 
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!(
-                        "🗳 Meeting Live Votes ({}/{})",
-                        votes_cast,
-                        voters.len()
-                    ))
-                    .strong()
-                    .color(Color32::from_rgb(100, 210, 255)),
-                );
-            });
-            ui.add_space(2.0);
-
-            for voter in &voters {
+        egui::Frame::none()
+            .fill(Color32::from_rgba_unmultiplied(20, 35, 55, 230))
+            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(60, 150, 220)))
+            .rounding(6.0)
+            .inner_margin(8.0)
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let (r, g, b) = color_rgb(voter.color_id);
                     ui.label(
-                        RichText::new(&voter.name)
-                            .color(Color32::from_rgb(r, g, b))
-                            .strong()
-                            .small(),
+                        RichText::new(format!(
+                            "🗳 Meeting Live Votes ({}/{})",
+                            votes_cast,
+                            voters.len()
+                        ))
+                        .strong()
+                        .color(Color32::from_rgb(100, 210, 255)),
                     );
-                    ui.label(
-                        RichText::new("➜")
-                            .small()
-                            .color(Color32::from_rgb(160, 160, 160)),
-                    );
+                });
+                ui.add_space(3.0);
 
-                    match voter.voted_for {
-                        Some(target_id) if target_id == -1 => {
-                            ui.label(
-                                RichText::new("[SKIPPED]")
-                                    .strong()
-                                    .small()
-                                    .color(Color32::from_rgb(200, 200, 200)),
-                            );
-                        }
-                        Some(target_id) => {
-                            if let Some(target) =
-                                state.players.iter().find(|p| p.player_id as i16 == target_id)
-                            {
-                                let (tr, tg, tb) = color_rgb(target.color_id);
+                for voter in &voters {
+                    ui.horizontal(|ui| {
+                        let (r, g, b) = color_rgb(voter.color_id);
+                        ui.label(
+                            RichText::new(&voter.name)
+                                .color(Color32::from_rgb(r, g, b))
+                                .strong()
+                                .small(),
+                        );
+                        ui.label(
+                            RichText::new("➜")
+                                .small()
+                                .color(Color32::from_rgb(160, 160, 160)),
+                        );
+
+                        match voter.voted_for {
+                            Some(target_id) if target_id == -1 => {
                                 ui.label(
-                                    RichText::new(format!("[Voted: {}]", target.name))
+                                    RichText::new("[SKIPPED]")
                                         .strong()
                                         .small()
-                                        .color(Color32::from_rgb(tr, tg, tb)),
+                                        .color(Color32::from_rgb(200, 200, 200)),
                                 );
-                            } else {
+                            }
+                            Some(target_id) => {
+                                if let Some(target) =
+                                    state.players.iter().find(|p| p.player_id as i16 == target_id)
+                                {
+                                    let (tr, tg, tb) = color_rgb(target.color_id);
+                                    ui.label(
+                                        RichText::new(format!("[Voted: {}]", target.name))
+                                            .strong()
+                                            .small()
+                                            .color(Color32::from_rgb(tr, tg, tb)),
+                                    );
+                                } else {
+                                    ui.label(
+                                        RichText::new(format!("[Voted: #{}]", target_id))
+                                            .strong()
+                                            .small()
+                                            .color(Color32::from_rgb(255, 180, 100)),
+                                    );
+                                }
+                            }
+                            None => {
                                 ui.label(
-                                    RichText::new(format!("[Voted: #{}]", target_id))
-                                        .strong()
+                                    RichText::new("Thinking...")
+                                        .italics()
                                         .small()
-                                        .color(Color32::from_rgb(255, 180, 100)),
+                                        .color(Color32::from_rgb(130, 140, 150)),
                                 );
                             }
                         }
-                        None => {
-                            ui.label(
-                                RichText::new("Thinking...")
-                                    .italics()
-                                    .small()
-                                    .color(Color32::from_rgb(130, 140, 150)),
-                            );
-                        }
-                    }
-                });
-            }
-        });
+                    });
+                }
+            });
         ui.add_space(6.0);
     }
 
-
     let avail_w = ui.available_width();
-    let num_cols = if avail_w >= 640.0 {
+    let num_cols = if avail_w >= 700.0 {
         3
     } else if avail_w >= 360.0 {
         2
@@ -1366,7 +1415,7 @@ fn draw_player_list(
     };
 
     let gap = 6.0;
-    let col_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(150.0);
+    let col_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(140.0);
 
     ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
         ui.horizontal_top(|ui| {
@@ -1375,8 +1424,8 @@ fn draw_player_list(
                     ui.set_width(col_w);
                     for (idx, player) in state.players.iter().enumerate() {
                         if idx % num_cols == col_idx {
-                            draw_player_card(ui, player, state, radar, col_w - 8.0);
-                            ui.add_space(4.0);
+                            draw_player_card(ui, player, state, radar, col_w);
+                            ui.add_space(6.0);
                         }
                     }
                 });

@@ -41,7 +41,7 @@ impostor_line = [
     30,
     230,
 ]
-tab_layout = "Vertical"
+tab_layout = "Horizontal"
 corner_rounding = 6.0
 card_opacity = 240
 font_scale = 1.0
