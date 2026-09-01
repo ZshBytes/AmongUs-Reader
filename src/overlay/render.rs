@@ -514,35 +514,12 @@ fn draw_map_hallway(
     from: (f32, f32),
     to: (f32, f32),
     thickness: f32,
-    center: Pos2,
-    origin: Pos2,
-    radar: &RadarState,
-    local_pos: (f32, f32),
-    scale_half: f32,
+    pos_to_screen: &impl Fn(f32, f32) -> Pos2,
+    scale_factor: f32,
     rect: egui::Rect,
 ) {
-    let dx1 = from.0 - local_pos.0;
-    let dy1 = from.1 - local_pos.1;
-    let cx1 = center.x + (dx1 * scale_half);
-    let cy1 = match radar.origin {
-        LineOrigin::LocalPlayer => center.y - (dy1 * scale_half),
-        LineOrigin::BottomCenter => {
-            origin.y - 20.0 - (dy1.max(0.0) * scale_half + (dx1.abs() * 0.2 * scale_half))
-        }
-    };
-
-    let dx2 = to.0 - local_pos.0;
-    let dy2 = to.1 - local_pos.1;
-    let cx2 = center.x + (dx2 * scale_half);
-    let cy2 = match radar.origin {
-        LineOrigin::LocalPlayer => center.y - (dy2 * scale_half),
-        LineOrigin::BottomCenter => {
-            origin.y - 20.0 - (dy2.max(0.0) * scale_half + (dx2.abs() * 0.2 * scale_half))
-        }
-    };
-
-    let p1 = Pos2::new(cx1, cy1);
-    let p2 = Pos2::new(cx2, cy2);
+    let p1 = pos_to_screen(from.0, from.1);
+    let p2 = pos_to_screen(to.0, to.1);
 
     if !rect.contains(p1) && !rect.contains(p2) {
         return;
@@ -551,7 +528,7 @@ fn draw_map_hallway(
     let hw_fill = Color32::from_rgba_unmultiplied(200, 215, 245, 110);
     let hw_stroke = Stroke::new(1.8_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 170));
 
-    let hw_width = (thickness * scale_half).max(6.0);
+    let hw_width = (thickness * scale_factor).max(6.0);
     painter.line_segment([p1, p2], Stroke::new(hw_width, hw_fill));
 
     let dir = p2 - p1;
@@ -569,27 +546,14 @@ fn draw_chamfered_room(
     center_pos: (f32, f32),
     size: (f32, f32),
     chamfer_type: u8,
-    center: Pos2,
-    origin: Pos2,
-    radar: &RadarState,
-    local_pos: (f32, f32),
-    scale_half: f32,
+    pos_to_screen: &impl Fn(f32, f32) -> Pos2,
+    scale_factor: f32,
     rect: egui::Rect,
 ) {
-    let dx = center_pos.0 - local_pos.0;
-    let dy = center_pos.1 - local_pos.1;
-
-    let cx = center.x + (dx * scale_half);
-    let cy = match radar.origin {
-        LineOrigin::LocalPlayer => center.y - (dy * scale_half),
-        LineOrigin::BottomCenter => {
-            origin.y - 20.0 - (dy.max(0.0) * scale_half + (dx.abs() * 0.2 * scale_half))
-        }
-    };
-
-    let w = size.0 * scale_half;
-    let h = size.1 * scale_half;
-    let room_rect = egui::Rect::from_center_size(Pos2::new(cx, cy), Vec2::new(w, h));
+    let center_pt = pos_to_screen(center_pos.0, center_pos.1);
+    let w = size.0 * scale_factor;
+    let h = size.1 * scale_factor;
+    let room_rect = egui::Rect::from_center_size(center_pt, Vec2::new(w, h));
     if !rect.intersects(room_rect) {
         return;
     }
@@ -660,17 +624,13 @@ fn draw_chamfered_room(
 fn draw_map_blueprint(
     painter: &egui::Painter,
     map: RadarMap,
-    origin: Pos2,
-    center: Pos2,
-    radar: &RadarState,
-    local_pos: (f32, f32),
+    pos_to_screen: &impl Fn(f32, f32) -> Pos2,
+    scale_factor: f32,
     rect: egui::Rect,
 ) {
     if map == RadarMap::None {
         return;
     }
-
-    let scale_half = radar.scale * 0.5;
 
     match map {
         RadarMap::None => {}
@@ -696,9 +656,7 @@ fn draw_map_blueprint(
                 ((-12.5, -3.0), (-16.0, -4.0), 1.8),
             ];
             for (from, to, th) in hallways {
-                draw_map_hallway(
-                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
-                );
+                draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
@@ -718,10 +676,7 @@ fn draw_map_blueprint(
                 ("MedBay", (-9.0, -1.5), (5.0, 5.0), 2),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(
-                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
-                    rect,
-                );
+                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::MiraHq => {
@@ -738,9 +693,7 @@ fn draw_map_blueprint(
                 ((28.0, 14.0), (28.0, 7.0), 2.2),
             ];
             for (from, to, th) in hallways {
-                draw_map_hallway(
-                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
-                );
+                draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
@@ -757,10 +710,7 @@ fn draw_map_blueprint(
                 ("Balcony", (28.0, 7.0), (6.0, 5.0), 1),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(
-                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
-                    rect,
-                );
+                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Polus => {
@@ -778,9 +728,7 @@ fn draw_map_blueprint(
                 ((-11.0, -18.0), (-8.0, -11.0), 2.2),
             ];
             for (from, to, th) in hallways {
-                draw_map_hallway(
-                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
-                );
+                draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
@@ -797,10 +745,7 @@ fn draw_map_blueprint(
                 ("Specimen Room", (-11.0, -18.0), (6.5, 5.5), 0),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(
-                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
-                    rect,
-                );
+                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Airship => {
@@ -820,9 +765,7 @@ fn draw_map_blueprint(
                 ((-2.0, -10.0), (-1.0, 0.0), 2.2),
             ];
             for (from, to, th) in hallways {
-                draw_map_hallway(
-                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
-                );
+                draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
@@ -841,10 +784,7 @@ fn draw_map_blueprint(
                 ("Electrical", (-2.0, -10.0), (6.5, 6.0), 0),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(
-                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
-                    rect,
-                );
+                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
         RadarMap::Fungle => {
@@ -859,9 +799,7 @@ fn draw_map_blueprint(
                 ((-14.0, 2.0), (0.0, 0.0), 2.2),
             ];
             for (from, to, th) in hallways {
-                draw_map_hallway(
-                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
-                );
+                draw_map_hallway(painter, from, to, th, pos_to_screen, scale_factor, rect);
             }
 
             let rooms = [
@@ -875,10 +813,7 @@ fn draw_map_blueprint(
                 ("Lookout", (-14.0, 2.0), (5.5, 5.0), 0),
             ];
             for (name, pos, size, ch) in rooms {
-                draw_chamfered_room(
-                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
-                    rect,
-                );
+                draw_chamfered_room(painter, name, pos, size, ch, pos_to_screen, scale_factor, rect);
             }
         }
     }
@@ -928,37 +863,76 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     );
 
     let center = rect.center();
-    let origin = match radar.origin {
-        LineOrigin::LocalPlayer => center,
-        LineOrigin::BottomCenter => Pos2::new(center.x, rect.bottom() - 10.0),
+    let is_map_mode = radar.map != RadarMap::None;
+
+    let (map_cx, map_cy, map_w, map_h) = match radar.map {
+        RadarMap::None => (0.0, 0.0, 1.0, 1.0),
+        RadarMap::Skeld => (-2.0, -4.5, 43.0, 25.0),
+        RadarMap::MiraHq => (11.5, 11.0, 41.0, 25.0),
+        RadarMap::Polus => (2.0, -1.5, 43.0, 40.0),
+        RadarMap::Airship => (4.5, -1.5, 55.0, 30.0),
+        RadarMap::Fungle => (0.0, -1.5, 35.0, 26.0),
+    };
+
+    let scale_factor = if is_map_mode {
+        let pad = 24.0;
+        let aw = (rect.width() - pad * 2.0).max(100.0);
+        let ah = (rect.height() - pad * 2.0).max(100.0);
+        let sx = aw / map_w;
+        let sy = ah / map_h;
+        sx.min(sy) * (radar.scale / 90.0)
+    } else {
+        radar.scale * 0.5
     };
 
     let local_player = state.players.iter().find(|p| p.is_local);
     let local_pos = local_player.map(|p| p.position).unwrap_or((0.0, 0.0));
 
-    // Draw Radar Range Circles and Crosshairs if enabled
-    if radar.theme.show_radar_grid {
+    let relative_origin = match radar.origin {
+        LineOrigin::LocalPlayer => center,
+        LineOrigin::BottomCenter => Pos2::new(center.x, rect.bottom() - 10.0),
+    };
+
+    let pos_to_screen = |wx: f32, wy: f32| -> Pos2 {
+        if is_map_mode {
+            let sx = center.x + (wx - map_cx) * scale_factor;
+            let sy = center.y - (wy - map_cy) * scale_factor;
+            Pos2::new(sx, sy)
+        } else {
+            let dx = wx - local_pos.0;
+            let dy = wy - local_pos.1;
+            let sx = center.x + dx * scale_factor;
+            let sy = match radar.origin {
+                LineOrigin::LocalPlayer => center.y - dy * scale_factor,
+                LineOrigin::BottomCenter => {
+                    relative_origin.y - 20.0
+                        - (dy.max(0.0) * scale_factor + (dx.abs() * 0.2 * scale_factor))
+                }
+            };
+            Pos2::new(sx, sy)
+        }
+    };
+
+    // Draw Radar Range Circles and Crosshairs if in relative mode and enabled
+    if !is_map_mode && radar.theme.show_radar_grid {
         let grid_col = Color32::from_rgba_unmultiplied(70, 110, 160, 35);
         let text_col = Color32::from_rgba_unmultiplied(120, 160, 210, 75);
 
-        // Crosshairs
         painter.line_segment(
-            [Pos2::new(rect.left(), origin.y), Pos2::new(rect.right(), origin.y)],
+            [Pos2::new(rect.left(), relative_origin.y), Pos2::new(rect.right(), relative_origin.y)],
             Stroke::new(1.0_f32, grid_col),
         );
         painter.line_segment(
-            [Pos2::new(origin.x, rect.top()), Pos2::new(origin.x, rect.bottom())],
+            [Pos2::new(relative_origin.x, rect.top()), Pos2::new(relative_origin.x, rect.bottom())],
             Stroke::new(1.0_f32, grid_col),
         );
 
-        // Range circles
-        let scale_half = radar.scale * 0.5;
         for dist in [5.0, 10.0, 15.0, 20.0, 30.0] {
-            let radius = dist * scale_half;
+            let radius = dist * scale_factor;
             if radius < rect.width() {
-                painter.circle_stroke(origin, radius, Stroke::new(1.0_f32, grid_col));
+                painter.circle_stroke(relative_origin, radius, Stroke::new(1.0_f32, grid_col));
                 painter.text(
-                    Pos2::new(origin.x + radius + 2.0, origin.y - 2.0),
+                    Pos2::new(relative_origin.x + radius + 2.0, relative_origin.y - 2.0),
                     Align2::LEFT_BOTTOM,
                     format!("{dist:.0}m"),
                     FontId::proportional(8.5),
@@ -969,7 +943,13 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     }
 
     // Draw Map Blueprint background if selected
-    draw_map_blueprint(&painter, radar.map, origin, center, radar, local_pos, rect);
+    draw_map_blueprint(&painter, radar.map, &pos_to_screen, scale_factor, rect);
+
+    let origin = if is_map_mode {
+        pos_to_screen(local_pos.0, local_pos.1)
+    } else {
+        relative_origin
+    };
 
     let local_color = radar.theme.local_player_color32();
     painter.circle_filled(origin, 5.0, local_color);
@@ -1028,21 +1008,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         let dx = smoothed_pos.0 - local_pos.0;
         let dy = smoothed_pos.1 - local_pos.1;
         let distance = (dx * dx + dy * dy).sqrt();
-
-        let target_x = center.x + (dx * (radar.scale * 0.5));
-        let target_y = match radar.origin {
-            LineOrigin::LocalPlayer => center.y - (dy * (radar.scale * 0.5)),
-            LineOrigin::BottomCenter => {
-                origin.y
-                    - 20.0
-                    - (dy.max(0.0) * (radar.scale * 0.5) + (dx.abs() * 0.2 * (radar.scale * 0.5)))
-            }
-        };
-
-        let pad = 24.0;
-        let clamped_x = target_x.clamp(rect.left() + pad, rect.right() - pad);
-        let clamped_y = target_y.clamp(rect.top() + pad, rect.bottom() - pad);
-        let target_pt = Pos2::new(clamped_x, clamped_y);
+        let target_pt = pos_to_screen(smoothed_pos.0, smoothed_pos.1);
 
         let (r, g, b) = color_rgb(player.color_id);
         let player_col = Color32::from_rgb(r, g, b);
@@ -1132,22 +1098,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             let dx = body.location.0 - local_pos.0;
             let dy = body.location.1 - local_pos.1;
             let distance = (dx * dx + dy * dy).sqrt();
-
-            let target_x = center.x + (dx * (radar.scale * 0.5));
-            let target_y = match radar.origin {
-                LineOrigin::LocalPlayer => center.y - (dy * (radar.scale * 0.5)),
-                LineOrigin::BottomCenter => {
-                    origin.y
-                        - 20.0
-                        - (dy.max(0.0) * (radar.scale * 0.5)
-                            + (dx.abs() * 0.2 * (radar.scale * 0.5)))
-                }
-            };
-
-            let pad = 24.0;
-            let clamped_x = target_x.clamp(rect.left() + pad, rect.right() - pad);
-            let clamped_y = target_y.clamp(rect.top() + pad, rect.bottom() - pad);
-            let target_pt = Pos2::new(clamped_x, clamped_y);
+            let target_pt = pos_to_screen(body.location.0, body.location.1);
 
             if radar.show_tracers {
                 painter.line_segment(
