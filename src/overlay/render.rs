@@ -1178,6 +1178,47 @@ fn draw_player_card(
                     );
                 }
 
+                if state.game_state == 3 && !player.is_dead {
+                    match player.voted_for {
+                        Some(target_id) if target_id == -1 => {
+                            ui.label(
+                                RichText::new("🗳 [VOTED: SKIP]")
+                                    .strong()
+                                    .small()
+                                    .color(Color32::from_rgb(200, 200, 200)),
+                            );
+                        }
+                        Some(target_id) => {
+                            if let Some(target) =
+                                state.players.iter().find(|p| p.player_id as i16 == target_id)
+                            {
+                                let (tr, tg, tb) = color_rgb(target.color_id);
+                                ui.label(
+                                    RichText::new(format!("🗳 [VOTED: {}]", target.name))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(tr, tg, tb)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new(format!("🗳 [VOTED: #{}]", target_id))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(255, 180, 100)),
+                                );
+                            }
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new("🗳 [VOTING: THINKING...]")
+                                    .italics()
+                                    .small()
+                                    .color(Color32::from_rgb(130, 140, 150)),
+                            );
+                        }
+                    }
+                }
+
                 if !player.friend_code.is_empty() {
                     ui.label(
                         RichText::new(format!("ID: {}", player.friend_code))
@@ -1225,6 +1266,88 @@ fn draw_player_list(
         });
     });
     ui.add_space(3.0);
+
+    // Meeting Live Votes Tracker (only during discussion / meeting)
+    if state.game_state == 3 {
+        let voters: Vec<_> = state
+            .players
+            .iter()
+            .filter(|p| !p.is_dead && !p.disconnected)
+            .collect();
+        let votes_cast = voters.iter().filter(|p| p.voted_for.is_some()).count();
+
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "🗳 Meeting Live Votes ({}/{})",
+                        votes_cast,
+                        voters.len()
+                    ))
+                    .strong()
+                    .color(Color32::from_rgb(100, 210, 255)),
+                );
+            });
+            ui.add_space(2.0);
+
+            for voter in &voters {
+                ui.horizontal(|ui| {
+                    let (r, g, b) = color_rgb(voter.color_id);
+                    ui.label(
+                        RichText::new(&voter.name)
+                            .color(Color32::from_rgb(r, g, b))
+                            .strong()
+                            .small(),
+                    );
+                    ui.label(
+                        RichText::new("➜")
+                            .small()
+                            .color(Color32::from_rgb(160, 160, 160)),
+                    );
+
+                    match voter.voted_for {
+                        Some(target_id) if target_id == -1 => {
+                            ui.label(
+                                RichText::new("[SKIPPED]")
+                                    .strong()
+                                    .small()
+                                    .color(Color32::from_rgb(200, 200, 200)),
+                            );
+                        }
+                        Some(target_id) => {
+                            if let Some(target) =
+                                state.players.iter().find(|p| p.player_id as i16 == target_id)
+                            {
+                                let (tr, tg, tb) = color_rgb(target.color_id);
+                                ui.label(
+                                    RichText::new(format!("[Voted: {}]", target.name))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(tr, tg, tb)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new(format!("[Voted: #{}]", target_id))
+                                        .strong()
+                                        .small()
+                                        .color(Color32::from_rgb(255, 180, 100)),
+                                );
+                            }
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new("Thinking...")
+                                    .italics()
+                                    .small()
+                                    .color(Color32::from_rgb(130, 140, 150)),
+                            );
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(6.0);
+    }
 
 
     let avail_w = ui.available_width();

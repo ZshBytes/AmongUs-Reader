@@ -381,51 +381,55 @@ impl GameScanner {
 
         // ── Read Meeting Voting States (during discussions / meetings) ─────────
         if self.meeting_hud_sf_block.is_none() {
-            self.meeting_hud_sf_block = find_static_fields_block(
-                &reader,
-                module_base,
-                0x2AC8E84, // MeetingHud_TypeInfo
-                &self.offsets.il2cpp,
-            )
-            .ok();
+            for candidate in [0x2AC8E84_u64, 0x2AC8E80, 0x2AC8EC0, 0x2AC7874, 0x2ADC244] {
+                if let Ok(sf) = find_static_fields_block(&reader, module_base, candidate, &self.offsets.il2cpp) {
+                    if let Ok(hud_ptr) = reader.read_pointer(sf) {
+                        if hud_ptr != 0 && reader.process().is_valid_pointer(hud_ptr) {
+                            self.meeting_hud_sf_block = Some(sf);
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         if let Some(sf) = self.meeting_hud_sf_block {
             if let Ok(hud_ptr) = reader.read_pointer(sf) {
                 if hud_ptr != 0 && reader.process().is_valid_pointer(hud_ptr) {
-                    if let Ok(states_array_ptr) = reader.read_pointer(hud_ptr + 0x5C) {
-                        if states_array_ptr != 0
-                            && reader.process().is_valid_pointer(states_array_ptr)
-                        {
-                            if let Ok(count) = reader.read_i32(states_array_ptr + 0xC) {
-                                let clamped = count.clamp(0, 15) as u64;
-                                for i in 0..clamped {
-                                    if let Ok(vote_area_ptr) =
-                                        reader.read_pointer(states_array_ptr + 0x10 + (i * 4))
-                                    {
-                                        if vote_area_ptr != 0
-                                            && reader.process().is_valid_pointer(vote_area_ptr)
-                                        {
-                                            let pid =
-                                                reader.read_u8(vote_area_ptr + 0x17).unwrap_or(255);
-                                            let did_vote =
-                                                reader.read_u8(vote_area_ptr + 0x16).unwrap_or(0)
-                                                    == 1;
-                                            let voted_for_id =
-                                                reader.read_u8(vote_area_ptr + 0x18).unwrap_or(255);
+                    for arr_off in [0x5C_u64, 0x60, 0x64, 0x58, 0x50, 0x54] {
+                        if let Ok(states_array_ptr) = reader.read_pointer(hud_ptr + arr_off) {
+                            if states_array_ptr != 0 && reader.process().is_valid_pointer(states_array_ptr) {
+                                if let Ok(count) = reader.read_i32(states_array_ptr + 0xC) {
+                                    if count > 0 && count <= 15 {
+                                        let clamped = count as u64;
+                                        for i in 0..clamped {
+                                            if let Ok(vote_area_ptr) = reader.read_pointer(states_array_ptr + 0x10 + (i * 4)) {
+                                                if vote_area_ptr != 0 && reader.process().is_valid_pointer(vote_area_ptr) {
+                                                    let did_vote = reader.read_u8(vote_area_ptr + 0x16).unwrap_or(0) == 1
+                                                        || reader.read_u8(vote_area_ptr + 0x1A).unwrap_or(0) == 1;
 
-                                            if did_vote && pid <= 15 {
-                                                if let Some(p) =
-                                                    players.iter_mut().find(|p| p.player_id == pid)
-                                                {
-                                                    p.voted_for = match voted_for_id {
-                                                        253 => Some(-1), // Skipped
-                                                        id if id <= 15 => Some(id as i16),
-                                                        _ => None,
+                                                    let pid = match reader.read_u8(vote_area_ptr + 0x17) {
+                                                        Ok(p) if p <= 15 => p,
+                                                        _ => reader.read_u8(vote_area_ptr + 0x1B).unwrap_or(255),
                                                     };
+
+                                                    let voted_for_raw = reader.read_u8(vote_area_ptr + 0x18)
+                                                        .or_else(|_| reader.read_u8(vote_area_ptr + 0x1C))
+                                                        .unwrap_or(255);
+
+                                                    if did_vote && pid <= 15 {
+                                                        if let Some(p) = players.iter_mut().find(|p| p.player_id == pid) {
+                                                            p.voted_for = match voted_for_raw {
+                                                                253 | 254 => Some(-1), // Skipped
+                                                                id if id <= 15 => Some(id as i16),
+                                                                _ => None,
+                                                            };
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                        break;
                                     }
                                 }
                             }
