@@ -1689,7 +1689,7 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
                 for (name, preset) in presets {
                     let is_active = radar.theme.name == name;
                     if ui.selectable_label(is_active, name).clicked() {
-                        radar.theme = preset;
+                        radar.theme.apply_color_preset(preset);
                         radar.theme.save();
                     }
                 }

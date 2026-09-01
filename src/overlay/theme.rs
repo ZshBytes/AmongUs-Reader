@@ -302,6 +302,32 @@ impl ThemeConfig {
         }
     }
 
+    /// Apply color settings from a preset while strictly preserving user layout preferences (tab layout, corner rounding, opacity, etc.)
+    pub fn apply_color_preset(&mut self, preset: ThemeConfig) {
+        self.name = preset.name;
+        self.background = preset.background;
+        self.canvas = preset.canvas;
+        self.border = preset.border;
+        self.accent = preset.accent;
+        self.header_text = preset.header_text;
+        self.local_player = preset.local_player;
+        self.impostor_line = preset.impostor_line;
+        self.crewmate = preset.crewmate;
+        self.impostor = preset.impostor;
+        self.scientist = preset.scientist;
+        self.engineer = preset.engineer;
+        self.guardian_angel = preset.guardian_angel;
+        self.shapeshifter = preset.shapeshifter;
+        self.crewmate_ghost = preset.crewmate_ghost;
+        self.impostor_ghost = preset.impostor_ghost;
+        self.phantom = preset.phantom;
+        self.tracker = preset.tracker;
+        self.noisemaker = preset.noisemaker;
+        self.detective = preset.detective;
+        self.viper = preset.viper;
+        self.judge = preset.judge;
+    }
+
     pub fn load() -> Self {
         if let Ok(contents) = std::fs::read_to_string(THEME_FILE) {
             if let Ok(theme) = toml::from_str::<ThemeConfig>(&contents) {
