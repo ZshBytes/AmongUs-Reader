@@ -738,26 +738,26 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         if imp.distance <= 5.5 && !local_player.map(|p| p.role.is_impostor_team()).unwrap_or(false) {
             let alert_rect = egui::Rect::from_min_size(
                 Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
-                Vec2::new(rect.width() - 12.0, 20.0),
+                Vec2::new(rect.width() - 12.0, 16.0),
             );
             painter.rect_filled(
                 alert_rect,
-                3.0,
+                2.5,
                 Color32::from_rgba_unmultiplied(180, 20, 20, 190),
             );
             painter.rect_stroke(
                 alert_rect,
-                3.0,
-                Stroke::new(1.2_f32, Color32::from_rgb(255, 60, 60)),
+                2.5,
+                Stroke::new(1.0_f32, Color32::from_rgb(255, 60, 60)),
             );
             painter.text(
                 alert_rect.center(),
                 Align2::CENTER_CENTER,
-                format!("⚠ DANGER: Impostor Nearby! {} is only {:.1}m away!", imp.name, imp.distance),
-                FontId::proportional(11.0),
+                format!("⚠ DANGER: Impostor Nearby! {} ({:.1}m)", imp.name, imp.distance),
+                FontId::proportional(10.0),
                 Color32::WHITE,
             );
-            top_offset += 24.0;
+            top_offset += 19.0;
         }
     }
 
@@ -766,23 +766,23 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         if b_dist <= 25.0 {
             let body_alert_rect = egui::Rect::from_min_size(
                 Pos2::new(rect.left() + 6.0, rect.top() + top_offset),
-                Vec2::new(rect.width() - 12.0, 18.0),
+                Vec2::new(rect.width() - 12.0, 15.0),
             );
             painter.rect_filled(
                 body_alert_rect,
-                3.0,
+                2.5,
                 Color32::from_rgba_unmultiplied(120, 30, 30, 160),
             );
             painter.rect_stroke(
                 body_alert_rect,
-                3.0,
-                Stroke::new(1.0_f32, Color32::from_rgb(255, 90, 90)),
+                2.5,
+                Stroke::new(0.9_f32, Color32::from_rgb(255, 90, 90)),
             );
             painter.text(
                 body_alert_rect.center(),
                 Align2::CENTER_CENTER,
-                format!("💀 DEAD BODY: {} ({:.1}m away)", body.victim_name, b_dist),
-                FontId::proportional(10.5),
+                format!("💀 DEAD BODY: {} ({:.1}m)", body.victim_name, b_dist),
+                FontId::proportional(9.5),
                 Color32::from_rgb(255, 200, 200),
             );
         }

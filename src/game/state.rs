@@ -307,8 +307,24 @@ impl SharedGameState {
 
                 // 3. Detect Phantom Vanish / Unvanish transitions
                 if curr.role == RoleType::Phantom && !curr.is_dead {
+                    let prev_role = prev_entry.map(|p| p.role);
                     let prev_vanished = prev_entry.map(|p| p.is_vanished).unwrap_or(false);
-                    if curr.is_vanished && !prev_vanished {
+
+                    if prev_role != Some(RoleType::Phantom) {
+                        let msg = format!("{} [PHANTOM] role active (invisibility enabled)!", curr.name);
+                        if state.log_config.log_kills {
+                            println!("[VANISH] {msg}");
+                        }
+                        let event = VanishEvent {
+                            message: msg,
+                            player_name: curr.name.clone(),
+                            is_vanished: true,
+                        };
+                        state.vanish_events.insert(0, event);
+                        if state.vanish_events.len() > 300 {
+                            state.vanish_events.truncate(300);
+                        }
+                    } else if curr.is_vanished && !prev_vanished {
                         let msg = format!("{} [PHANTOM] vanished (turned invisible)!", curr.name);
                         if state.log_config.log_kills {
                             println!("[VANISH] {msg}");
