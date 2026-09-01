@@ -18,6 +18,7 @@ serde_json = "1"
 sysinfo = "0.32"
 thiserror = "2"
 toml = "0.8"
+image = { version = "0.25", default-features = false, features = ["png"] }
 winit = "0.30"
 
 [dependencies.windows]
