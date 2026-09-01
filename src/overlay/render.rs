@@ -49,7 +49,7 @@ pub enum OverlayTab {
     Themes,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum RadarMap {
     None,
     Skeld,
@@ -59,7 +59,7 @@ pub enum RadarMap {
     Fungle,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RadarState {
     pub scale: f32,
     pub show_tracers: bool,
@@ -70,6 +70,21 @@ pub struct RadarState {
     pub theme: ThemeConfig,
     pub smoothed_positions: HashMap<u8, (f32, f32)>,
     pub last_frame: Option<Instant>,
+    pub map_textures: HashMap<RadarMap, egui::TextureHandle>,
+}
+
+impl std::fmt::Debug for RadarState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RadarState")
+            .field("scale", &self.scale)
+            .field("show_tracers", &self.show_tracers)
+            .field("filter", &self.filter)
+            .field("origin", &self.origin)
+            .field("map", &self.map)
+            .field("selected_tab", &self.selected_tab)
+            .field("theme", &self.theme)
+            .finish()
+    }
 }
 
 impl Default for RadarState {
@@ -84,6 +99,7 @@ impl Default for RadarState {
             theme: ThemeConfig::load(),
             smoothed_positions: HashMap::new(),
             last_frame: None,
+            map_textures: HashMap::new(),
         }
     }
 }
@@ -509,26 +525,10 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
     });
 }
 
-fn get_map_texture(ctx: &egui::Context, map: RadarMap) -> Option<egui::TextureHandle> {
-    let (name, bytes) = match map {
-        RadarMap::None => return None,
-        RadarMap::Skeld => ("map_skeld", include_bytes!("../../skeld.png").as_slice()),
-        RadarMap::MiraHq => ("map_mira", include_bytes!("../../mira.png").as_slice()),
-        RadarMap::Polus => ("map_polus", include_bytes!("../../polus.png").as_slice()),
-        RadarMap::Airship => ("map_airship", include_bytes!("../../airship.png").as_slice()),
-        RadarMap::Fungle => ("map_fungle", include_bytes!("../../fungle.png").as_slice()),
-    };
-
-    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
-    let (w, h) = img.dimensions();
-    let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw());
-    Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
-}
-
 fn draw_map_blueprint(
     ctx: &egui::Context,
     painter: &egui::Painter,
-    map: RadarMap,
+    radar: &mut RadarState,
     center: Pos2,
     map_w: f32,
     map_h: f32,
@@ -536,22 +536,56 @@ fn draw_map_blueprint(
     _pos_to_screen: &impl Fn(f32, f32) -> Pos2,
     _rect: egui::Rect,
 ) {
+    let map = radar.map;
     if map == RadarMap::None {
         return;
     }
 
-    if let Some(texture) = get_map_texture(ctx, map) {
-        let map_rect = egui::Rect::from_center_size(
-            center,
-            Vec2::new(map_w * scale_factor, map_h * scale_factor),
-        );
-        painter.image(
-            texture.id(),
-            map_rect,
-            egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
-    }
+    let texture = radar.map_textures.entry(map).or_insert_with(|| {
+        let (name, bytes) = match map {
+            RadarMap::None => ("none", &[][..]),
+            RadarMap::Skeld => ("map_skeld", include_bytes!("../../skeld.png").as_slice()),
+            RadarMap::MiraHq => ("map_mira", include_bytes!("../../mira.png").as_slice()),
+            RadarMap::Polus => ("map_polus", include_bytes!("../../polus.png").as_slice()),
+            RadarMap::Airship => ("map_airship", include_bytes!("../../airship.png").as_slice()),
+            RadarMap::Fungle => ("map_fungle", include_bytes!("../../fungle.png").as_slice()),
+        };
+
+        if let Ok(img) = image::load_from_memory(bytes) {
+            let img = img.to_rgba8();
+            let (orig_w, orig_h) = img.dimensions();
+            let max_dim = 1920.0;
+            let (tw, th) = if orig_w > 1920 || orig_h > 1920 {
+                let ratio = (max_dim / orig_w as f32).min(max_dim / orig_h as f32);
+                ((orig_w as f32 * ratio) as u32, (orig_h as f32 * ratio) as u32)
+            } else {
+                (orig_w, orig_h)
+            };
+            let resized = if tw != orig_w || th != orig_h {
+                image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle)
+            } else {
+                img
+            };
+            let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                [tw as usize, th as usize],
+                resized.as_raw(),
+            );
+            ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR)
+        } else {
+            ctx.load_texture("fallback", egui::ColorImage::example(), egui::TextureOptions::LINEAR)
+        }
+    });
+
+    let map_rect = egui::Rect::from_center_size(
+        center,
+        Vec2::new(map_w * scale_factor, map_h * scale_factor),
+    );
+    painter.image(
+        texture.id(),
+        map_rect,
+        egui::Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+        Color32::WHITE,
+    );
 }
 
 fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarState) {
@@ -623,7 +657,8 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     let local_player = state.players.iter().find(|p| p.is_local);
     let local_pos = local_player.map(|p| p.position).unwrap_or((0.0, 0.0));
 
-    let relative_origin = match radar.origin {
+    let radar_origin = radar.origin;
+    let relative_origin = match radar_origin {
         LineOrigin::LocalPlayer => center,
         LineOrigin::BottomCenter => Pos2::new(center.x, rect.bottom() - 10.0),
     };
@@ -637,7 +672,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             let dx = wx - local_pos.0;
             let dy = wy - local_pos.1;
             let sx = center.x + dx * scale_factor;
-            let sy = match radar.origin {
+            let sy = match radar_origin {
                 LineOrigin::LocalPlayer => center.y - dy * scale_factor,
                 LineOrigin::BottomCenter => {
                     relative_origin.y - 20.0
@@ -681,7 +716,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     draw_map_blueprint(
         ui.ctx(),
         &painter,
-        radar.map,
+        radar,
         center,
         map_w,
         map_h,
