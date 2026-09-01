@@ -359,48 +359,30 @@ fn draw_tab_bar_vertical(ui: &mut Ui, radar: &mut RadarState) {
     ui.vertical(|ui| {
         ui.set_min_width(115.0);
 
-        let btn_players = ui.add_sized(
-            [110.0, 24.0],
-            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Players, "Players List"),
-        );
-        if btn_players.clicked() {
-            radar.selected_tab = OverlayTab::Players;
-        }
-        ui.add_space(2.0);
+        let tabs = [
+            (OverlayTab::Players, "👥  Players", "View live players, roles and status"),
+            (OverlayTab::Tracers, "📡  Radar/ESP", "Live tactical radar, tracers and Skeld map"),
+            (OverlayTab::Logs, "📋  Logs", "Kill history and match logs"),
+            (OverlayTab::CheatSheet, "📜  Cheats", "Shortcuts and cheat sheet guide"),
+            (OverlayTab::Themes, "🎨  Theme", "Customize colors, layout and styles"),
+        ];
 
-        let btn_tracers = ui.add_sized(
-            [110.0, 24.0],
-            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Tracers, "Radar/ESP"),
-        );
-        if btn_tracers.clicked() {
-            radar.selected_tab = OverlayTab::Tracers;
-        }
-        ui.add_space(2.0);
+        for (tab, label, tooltip) in tabs {
+            let is_selected = radar.selected_tab == tab;
+            let text = if is_selected {
+                RichText::new(label).strong().color(radar.theme.accent_color32())
+            } else {
+                RichText::new(label).color(Color32::from_rgb(180, 195, 220))
+            };
 
-        let btn_logs = ui.add_sized(
-            [110.0, 24.0],
-            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Logs, "Console Logs"),
-        );
-        if btn_logs.clicked() {
-            radar.selected_tab = OverlayTab::Logs;
-        }
-        ui.add_space(2.0);
-
-        let btn_cheat = ui.add_sized(
-            [110.0, 24.0],
-            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::CheatSheet, "Cheat Sheet"),
-        );
-        if btn_cheat.clicked() {
-            radar.selected_tab = OverlayTab::CheatSheet;
-        }
-        ui.add_space(2.0);
-
-        let btn_themes = ui.add_sized(
-            [110.0, 24.0],
-            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Themes, "Themes & Style"),
-        );
-        if btn_themes.clicked() {
-            radar.selected_tab = OverlayTab::Themes;
+            let btn = ui.add_sized(
+                [110.0, 28.0],
+                egui::SelectableLabel::new(is_selected, text),
+            );
+            if btn.on_hover_text(tooltip).clicked() {
+                radar.selected_tab = tab;
+            }
+            ui.add_space(2.0);
         }
     });
 }
@@ -765,13 +747,13 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     let mut top_offset = 6.0;
     
     // Top Overview Line
-    let stats_text = format!("🔴 Impostors: {} | 🟢 Crew: {}", alive_impostors.len(), alive_crew_count);
+    let stats_text = format!("🔴 Impostors: {}   🟢 Crewmates: {}", alive_impostors.len(), alive_crew_count);
     painter.text(
         Pos2::new(rect.left() + 8.0, rect.top() + top_offset),
         Align2::LEFT_TOP,
         stats_text,
         FontId::proportional(11.0),
-        Color32::from_rgb(220, 230, 250),
+        Color32::from_rgb(220, 235, 255),
     );
     top_offset += 16.0;
 
