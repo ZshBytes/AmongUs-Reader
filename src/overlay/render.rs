@@ -636,11 +636,11 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
 
     let (map_cx, map_cy, map_w, map_h) = match radar.map {
         RadarMap::None => (0.0, 0.0, 1.0, 1.0),
-        RadarMap::Skeld => (-2.0, -6.0, 48.0, 30.0),
-        RadarMap::MiraHq => (11.0, 16.0, 38.0, 36.0),
-        RadarMap::Polus => (18.0, 10.0, 38.0, 34.0),
-        RadarMap::Airship => (1.0, 2.0, 46.0, 30.0),
-        RadarMap::Fungle => (0.0, 2.0, 48.0, 38.0),
+        RadarMap::Skeld => (-1.5, -4.5, 42.0, 28.0),
+        RadarMap::MiraHq => (11.5, 15.5, 36.0, 36.0),
+        RadarMap::Polus => (0.0, 3.5, 42.0, 34.0),
+        RadarMap::Airship => (0.0, 2.0, 46.0, 30.0),
+        RadarMap::Fungle => (0.0, 3.0, 46.0, 36.0),
     };
 
     let scale_factor = if is_map_mode {
