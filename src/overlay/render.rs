@@ -509,6 +509,154 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
     });
 }
 
+fn draw_map_hallway(
+    painter: &egui::Painter,
+    from: (f32, f32),
+    to: (f32, f32),
+    thickness: f32,
+    center: Pos2,
+    origin: Pos2,
+    radar: &RadarState,
+    local_pos: (f32, f32),
+    scale_half: f32,
+    rect: egui::Rect,
+) {
+    let dx1 = from.0 - local_pos.0;
+    let dy1 = from.1 - local_pos.1;
+    let cx1 = center.x + (dx1 * scale_half);
+    let cy1 = match radar.origin {
+        LineOrigin::LocalPlayer => center.y - (dy1 * scale_half),
+        LineOrigin::BottomCenter => {
+            origin.y - 20.0 - (dy1.max(0.0) * scale_half + (dx1.abs() * 0.2 * scale_half))
+        }
+    };
+
+    let dx2 = to.0 - local_pos.0;
+    let dy2 = to.1 - local_pos.1;
+    let cx2 = center.x + (dx2 * scale_half);
+    let cy2 = match radar.origin {
+        LineOrigin::LocalPlayer => center.y - (dy2 * scale_half),
+        LineOrigin::BottomCenter => {
+            origin.y - 20.0 - (dy2.max(0.0) * scale_half + (dx2.abs() * 0.2 * scale_half))
+        }
+    };
+
+    let p1 = Pos2::new(cx1, cy1);
+    let p2 = Pos2::new(cx2, cy2);
+
+    if !rect.contains(p1) && !rect.contains(p2) {
+        return;
+    }
+
+    let hw_fill = Color32::from_rgba_unmultiplied(200, 215, 245, 110);
+    let hw_stroke = Stroke::new(1.8_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 170));
+
+    let hw_width = (thickness * scale_half).max(6.0);
+    painter.line_segment([p1, p2], Stroke::new(hw_width, hw_fill));
+
+    let dir = p2 - p1;
+    let len = dir.length();
+    if len > 0.1 {
+        let norm = Vec2::new(-dir.y, dir.x) / len * (hw_width * 0.5);
+        painter.line_segment([p1 + norm, p2 + norm], hw_stroke);
+        painter.line_segment([p1 - norm, p2 - norm], hw_stroke);
+    }
+}
+
+fn draw_chamfered_room(
+    painter: &egui::Painter,
+    name: &str,
+    center_pos: (f32, f32),
+    size: (f32, f32),
+    chamfer_type: u8,
+    center: Pos2,
+    origin: Pos2,
+    radar: &RadarState,
+    local_pos: (f32, f32),
+    scale_half: f32,
+    rect: egui::Rect,
+) {
+    let dx = center_pos.0 - local_pos.0;
+    let dy = center_pos.1 - local_pos.1;
+
+    let cx = center.x + (dx * scale_half);
+    let cy = match radar.origin {
+        LineOrigin::LocalPlayer => center.y - (dy * scale_half),
+        LineOrigin::BottomCenter => {
+            origin.y - 20.0 - (dy.max(0.0) * scale_half + (dx.abs() * 0.2 * scale_half))
+        }
+    };
+
+    let w = size.0 * scale_half;
+    let h = size.1 * scale_half;
+    let room_rect = egui::Rect::from_center_size(Pos2::new(cx, cy), Vec2::new(w, h));
+    if !rect.intersects(room_rect) {
+        return;
+    }
+
+    let c = (w.min(h) * 0.25).clamp(3.0, 16.0);
+    let min = room_rect.min;
+    let max = room_rect.max;
+
+    let points = match chamfer_type {
+        1 => vec![
+            Pos2::new(min.x, min.y),
+            Pos2::new(max.x - c, min.y),
+            Pos2::new(max.x, min.y + c),
+            Pos2::new(max.x, max.y - c),
+            Pos2::new(max.x - c, max.y),
+            Pos2::new(min.x, max.y),
+        ],
+        2 => vec![
+            Pos2::new(min.x + c, min.y),
+            Pos2::new(max.x, min.y),
+            Pos2::new(max.x, max.y),
+            Pos2::new(min.x + c, max.y),
+            Pos2::new(min.x, max.y - c),
+            Pos2::new(min.x, min.y + c),
+        ],
+        3 => vec![
+            Pos2::new(min.x, min.y),
+            Pos2::new(max.x - c, min.y),
+            Pos2::new(max.x, (min.y + max.y) * 0.5),
+            Pos2::new(max.x - c, max.y),
+            Pos2::new(min.x, max.y),
+        ],
+        4 => vec![
+            Pos2::new(min.x + c, min.y),
+            Pos2::new(max.x, min.y),
+            Pos2::new(max.x, max.y),
+            Pos2::new(min.x + c, max.y),
+            Pos2::new(min.x, (min.y + max.y) * 0.5),
+        ],
+        _ => vec![
+            Pos2::new(min.x + c, min.y),
+            Pos2::new(max.x - c, min.y),
+            Pos2::new(max.x, min.y + c),
+            Pos2::new(max.x, max.y - c),
+            Pos2::new(max.x - c, max.y),
+            Pos2::new(min.x + c, max.y),
+            Pos2::new(min.x, max.y - c),
+            Pos2::new(min.x, min.y + c),
+        ],
+    };
+
+    let room_blue = Color32::from_rgba_unmultiplied(16, 76, 240, 220);
+    let border_stroke = Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 240));
+
+    painter.add(egui::Shape::convex_polygon(points, room_blue, border_stroke));
+
+    if w > 26.0 && h > 14.0 {
+        painter.text(
+            room_rect.center(),
+            Align2::CENTER_CENTER,
+            name,
+            FontId::proportional(10.0),
+            Color32::WHITE,
+        );
+    }
+}
+
 fn draw_map_blueprint(
     painter: &egui::Painter,
     map: RadarMap,
@@ -518,118 +666,220 @@ fn draw_map_blueprint(
     local_pos: (f32, f32),
     rect: egui::Rect,
 ) {
-    let rooms: &[(&str, f32, f32, f32, f32)] = match map {
-        RadarMap::None => return,
-        RadarMap::Skeld => &[
-            ("Cafeteria", -1.0, 2.5, 9.0, 7.0),
-            ("Weapons", 9.0, 1.5, 5.0, 5.0),
-            ("O2", 4.5, -3.0, 4.0, 4.0),
-            ("Navigation", 16.5, -5.0, 5.5, 6.0),
-            ("Shields", 9.5, -12.0, 5.5, 5.5),
-            ("Comms", 4.0, -15.5, 4.5, 4.0),
-            ("Storage", -1.0, -12.0, 8.0, 7.0),
-            ("Admin", 4.5, -7.5, 5.5, 4.5),
-            ("Electrical", -7.5, -8.5, 6.0, 5.5),
-            ("Lower Engine", -16.0, -11.0, 6.0, 6.0),
-            ("Security", -12.5, -3.0, 4.5, 4.5),
-            ("Reactor", -20.5, -5.0, 5.5, 8.0),
-            ("Upper Engine", -16.0, 3.0, 6.0, 6.0),
-            ("MedBay", -9.0, -1.5, 5.0, 5.0),
-        ],
-        RadarMap::MiraHq => &[
-            ("Launchpad", -5.0, 2.0, 8.0, 6.0),
-            ("MedBay", 4.0, 2.0, 5.0, 5.0),
-            ("Communications", 10.0, 6.0, 5.0, 4.5),
-            ("Locker Room", 10.0, 12.0, 5.0, 5.0),
-            ("Reactor", 1.0, 16.0, 6.0, 6.0),
-            ("Laboratory", 8.0, 20.0, 6.0, 5.5),
-            ("Office", 16.0, 20.0, 5.0, 5.0),
-            ("Admin", 22.0, 20.0, 5.0, 5.0),
-            ("Greenhouse", 28.0, 20.0, 6.0, 6.0),
-            ("Cafeteria", 28.0, 14.0, 7.0, 6.0),
-            ("Balcony", 28.0, 7.0, 6.0, 5.0),
-        ],
-        RadarMap::Polus => &[
-            ("Dropship", 0.0, 15.0, 7.0, 6.0),
-            ("Weapons", 12.0, 10.0, 5.5, 5.0),
-            ("O2", 2.0, 6.0, 5.0, 4.5),
-            ("Comms", -16.0, 2.0, 5.0, 4.5),
-            ("Security", -13.0, -4.0, 4.5, 4.5),
-            ("Electrical", -8.0, -11.0, 5.5, 5.0),
-            ("Storage", 0.0, -5.0, 7.0, 6.5),
-            ("Office", 18.0, 0.0, 6.5, 6.0),
-            ("Admin", 20.0, -7.0, 5.5, 5.0),
-            ("Laboratory", 15.0, -15.0, 7.0, 6.5),
-            ("Specimen", -11.0, -18.0, 6.0, 5.5),
-        ],
-        RadarMap::Airship => &[
-            ("Cockpit", -19.0, 1.0, 6.0, 6.0),
-            ("Vault", -10.0, 10.0, 6.0, 5.0),
-            ("Brig", -12.0, -7.0, 5.5, 5.5),
-            ("Engine Room", -1.0, 0.0, 8.0, 7.0),
-            ("Armory", -5.0, 10.0, 5.5, 5.0),
-            ("Records", 14.0, 9.0, 6.5, 5.5),
-            ("Lounge", 25.0, 9.0, 6.5, 5.5),
-            ("Cargo Bay", 28.0, -1.0, 7.0, 6.5),
-            ("Medical", 17.0, -1.0, 5.5, 5.0),
-            ("Showers", 19.0, -9.0, 6.0, 5.5),
-            ("Main Hall", 9.0, 0.0, 6.0, 6.0),
-            ("Meeting Room", 9.0, -13.0, 7.0, 6.0),
-            ("Electrical", -2.0, -10.0, 6.5, 6.0),
-        ],
-        RadarMap::Fungle => &[
-            ("Campfire", 0.0, 0.0, 7.0, 7.0),
-            ("Kitchen", -8.0, 8.0, 6.0, 5.5),
-            ("Greenhouse", 8.0, 8.0, 6.0, 5.5),
-            ("Laboratory", 14.0, -2.0, 6.5, 6.0),
-            ("Comms", 12.0, -11.0, 5.5, 5.0),
-            ("Storage", 0.0, -10.0, 7.0, 6.0),
-            ("Reactor", -12.0, -8.0, 6.0, 6.0),
-            ("Lookout", -14.0, 2.0, 5.5, 5.0),
-        ],
-    };
+    if map == RadarMap::None {
+        return;
+    }
 
     let scale_half = radar.scale * 0.5;
 
-    for &(name, rx, ry, rw, rh) in rooms {
-        let dx = rx - local_pos.0;
-        let dy = ry - local_pos.1;
-
-        let cx = center.x + (dx * scale_half);
-        let cy = match radar.origin {
-            LineOrigin::LocalPlayer => center.y - (dy * scale_half),
-            LineOrigin::BottomCenter => {
-                origin.y - 20.0 - (dy.max(0.0) * scale_half + (dx.abs() * 0.2 * scale_half))
+    match map {
+        RadarMap::None => {}
+        RadarMap::Skeld => {
+            let hallways = [
+                ((-16.0, 3.0), (-20.5, -5.0), 2.2),
+                ((-16.0, -11.0), (-20.5, -5.0), 2.2),
+                ((-16.0, 3.0), (-16.0, -11.0), 2.2),
+                ((-16.0, 3.0), (-1.0, 2.5), 2.2),
+                ((-9.0, -1.5), (-1.0, 2.5), 2.0),
+                ((-9.0, -1.5), (-16.0, 3.0), 2.0),
+                ((-1.0, 2.5), (9.0, 1.5), 2.2),
+                ((9.0, 1.5), (16.5, -5.0), 2.2),
+                ((16.5, -5.0), (9.5, -12.0), 2.2),
+                ((4.5, -3.0), (16.5, -5.0), 2.0),
+                ((9.5, -12.0), (-1.0, -12.0), 2.2),
+                ((4.0, -15.5), (-1.0, -12.0), 2.0),
+                ((-1.0, -12.0), (-7.5, -8.5), 2.0),
+                ((-1.0, -12.0), (-16.0, -11.0), 2.2),
+                ((-1.0, -12.0), (-1.0, 2.5), 2.4),
+                ((4.5, -7.5), (-1.0, 2.5), 2.0),
+                ((4.5, -7.5), (-1.0, -12.0), 2.0),
+                ((-12.5, -3.0), (-16.0, -4.0), 1.8),
+            ];
+            for (from, to, th) in hallways {
+                draw_map_hallway(
+                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
+                );
             }
-        };
 
-        let w = rw * scale_half;
-        let h = rh * scale_half;
-
-        let room_rect = egui::Rect::from_center_size(Pos2::new(cx, cy), Vec2::new(w, h));
-        if !rect.intersects(room_rect) {
-            continue;
+            let rooms = [
+                ("Cafeteria", (-1.0, 2.5), (9.5, 7.5), 0),
+                ("Weapons", (9.0, 1.5), (5.5, 5.5), 1),
+                ("O2", (4.5, -3.0), (4.0, 4.0), 0),
+                ("Navigation", (16.5, -5.0), (6.0, 6.0), 3),
+                ("Shields", (9.5, -12.0), (5.5, 5.5), 2),
+                ("Communications", (4.0, -15.5), (5.2, 4.2), 0),
+                ("Storage", (-1.0, -12.0), (8.5, 7.5), 0),
+                ("Admin", (4.5, -7.5), (5.5, 4.5), 0),
+                ("Electrical", (-7.5, -8.5), (6.0, 5.5), 0),
+                ("Lower Engine", (-16.0, -11.0), (6.0, 6.0), 2),
+                ("Security", (-12.5, -3.0), (4.5, 4.5), 0),
+                ("Reactor", (-20.5, -5.0), (5.5, 8.0), 4),
+                ("Upper Engine", (-16.0, 3.0), (6.0, 6.0), 1),
+                ("MedBay", (-9.0, -1.5), (5.0, 5.0), 2),
+            ];
+            for (name, pos, size, ch) in rooms {
+                draw_chamfered_room(
+                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
+                    rect,
+                );
+            }
         }
+        RadarMap::MiraHq => {
+            let hallways = [
+                ((-5.0, 2.0), (4.0, 2.0), 2.2),
+                ((4.0, 2.0), (10.0, 6.0), 2.2),
+                ((10.0, 6.0), (10.0, 12.0), 2.2),
+                ((10.0, 12.0), (1.0, 16.0), 2.2),
+                ((10.0, 12.0), (8.0, 20.0), 2.2),
+                ((8.0, 20.0), (16.0, 20.0), 2.2),
+                ((16.0, 20.0), (22.0, 20.0), 2.2),
+                ((22.0, 20.0), (28.0, 20.0), 2.2),
+                ((28.0, 20.0), (28.0, 14.0), 2.2),
+                ((28.0, 14.0), (28.0, 7.0), 2.2),
+            ];
+            for (from, to, th) in hallways {
+                draw_map_hallway(
+                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
+                );
+            }
 
-        painter.rect_filled(
-            room_rect,
-            3.0,
-            Color32::from_rgba_unmultiplied(25, 45, 75, 40),
-        );
-        painter.rect_stroke(
-            room_rect,
-            3.0,
-            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(65, 120, 190, 75)),
-        );
+            let rooms = [
+                ("Launchpad", (-5.0, 2.0), (8.0, 6.0), 0),
+                ("MedBay", (4.0, 2.0), (5.0, 5.0), 0),
+                ("Communications", (10.0, 6.0), (5.0, 4.5), 0),
+                ("Locker Room", (10.0, 12.0), (5.0, 5.0), 0),
+                ("Reactor", (1.0, 16.0), (6.0, 6.0), 4),
+                ("Laboratory", (8.0, 20.0), (6.0, 5.5), 0),
+                ("Office", (16.0, 20.0), (5.0, 5.0), 0),
+                ("Admin", (22.0, 20.0), (5.0, 5.0), 0),
+                ("Greenhouse", (28.0, 20.0), (6.0, 6.0), 0),
+                ("Cafeteria", (28.0, 14.0), (7.0, 6.0), 0),
+                ("Balcony", (28.0, 7.0), (6.0, 5.0), 1),
+            ];
+            for (name, pos, size, ch) in rooms {
+                draw_chamfered_room(
+                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
+                    rect,
+                );
+            }
+        }
+        RadarMap::Polus => {
+            let hallways = [
+                ((0.0, 15.0), (12.0, 10.0), 2.2),
+                ((0.0, 15.0), (2.0, 6.0), 2.2),
+                ((2.0, 6.0), (0.0, -5.0), 2.2),
+                ((0.0, -5.0), (-8.0, -11.0), 2.2),
+                ((-8.0, -11.0), (-13.0, -4.0), 2.2),
+                ((-13.0, -4.0), (-16.0, 2.0), 2.2),
+                ((0.0, -5.0), (18.0, 0.0), 2.2),
+                ((18.0, 0.0), (20.0, -7.0), 2.2),
+                ((20.0, -7.0), (15.0, -15.0), 2.2),
+                ((15.0, -15.0), (-11.0, -18.0), 2.2),
+                ((-11.0, -18.0), (-8.0, -11.0), 2.2),
+            ];
+            for (from, to, th) in hallways {
+                draw_map_hallway(
+                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
+                );
+            }
 
-        if w > 32.0 && h > 18.0 {
-            painter.text(
-                room_rect.center(),
-                Align2::CENTER_CENTER,
-                name,
-                FontId::proportional(9.0),
-                Color32::from_rgba_unmultiplied(160, 200, 245, 110),
-            );
+            let rooms = [
+                ("Dropship", (0.0, 15.0), (7.5, 6.0), 0),
+                ("Weapons", (12.0, 10.0), (5.5, 5.0), 1),
+                ("O2", (2.0, 6.0), (5.0, 4.5), 0),
+                ("Communications", (-16.0, 2.0), (5.0, 4.5), 0),
+                ("Security", (-13.0, -4.0), (4.5, 4.5), 0),
+                ("Electrical", (-8.0, -11.0), (5.5, 5.0), 0),
+                ("Storage", (0.0, -5.0), (7.5, 6.5), 0),
+                ("Office", (18.0, 0.0), (6.5, 6.0), 0),
+                ("Admin", (20.0, -7.0), (5.5, 5.0), 0),
+                ("Laboratory", (15.0, -15.0), (7.0, 6.5), 0),
+                ("Specimen Room", (-11.0, -18.0), (6.5, 5.5), 0),
+            ];
+            for (name, pos, size, ch) in rooms {
+                draw_chamfered_room(
+                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
+                    rect,
+                );
+            }
+        }
+        RadarMap::Airship => {
+            let hallways = [
+                ((-19.0, 1.0), (-1.0, 0.0), 2.2),
+                ((-10.0, 10.0), (-5.0, 10.0), 2.2),
+                ((-5.0, 10.0), (-1.0, 0.0), 2.2),
+                ((-12.0, -7.0), (-1.0, 0.0), 2.2),
+                ((-1.0, 0.0), (9.0, 0.0), 2.2),
+                ((9.0, 0.0), (14.0, 9.0), 2.2),
+                ((14.0, 9.0), (25.0, 9.0), 2.2),
+                ((25.0, 9.0), (28.0, -1.0), 2.2),
+                ((9.0, 0.0), (17.0, -1.0), 2.2),
+                ((17.0, -1.0), (19.0, -9.0), 2.2),
+                ((9.0, 0.0), (9.0, -13.0), 2.2),
+                ((9.0, -13.0), (-2.0, -10.0), 2.2),
+                ((-2.0, -10.0), (-1.0, 0.0), 2.2),
+            ];
+            for (from, to, th) in hallways {
+                draw_map_hallway(
+                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
+                );
+            }
+
+            let rooms = [
+                ("Cockpit", (-19.0, 1.0), (6.0, 6.0), 4),
+                ("Vault", (-10.0, 10.0), (6.0, 5.0), 0),
+                ("Brig", (-12.0, -7.0), (5.5, 5.5), 0),
+                ("Engine Room", (-1.0, 0.0), (8.5, 7.0), 0),
+                ("Armory", (-5.0, 10.0), (5.5, 5.0), 0),
+                ("Records", (14.0, 9.0), (6.5, 5.5), 0),
+                ("Lounge", (25.0, 9.0), (6.5, 5.5), 1),
+                ("Cargo Bay", (28.0, -1.0), (7.0, 6.5), 3),
+                ("Medical", (17.0, -1.0), (5.5, 5.0), 0),
+                ("Showers", (19.0, -9.0), (6.0, 5.5), 0),
+                ("Main Hall", (9.0, 0.0), (6.0, 6.0), 0),
+                ("Meeting Room", (9.0, -13.0), (7.0, 6.0), 0),
+                ("Electrical", (-2.0, -10.0), (6.5, 6.0), 0),
+            ];
+            for (name, pos, size, ch) in rooms {
+                draw_chamfered_room(
+                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
+                    rect,
+                );
+            }
+        }
+        RadarMap::Fungle => {
+            let hallways = [
+                ((0.0, 0.0), (-8.0, 8.0), 2.2),
+                ((0.0, 0.0), (8.0, 8.0), 2.2),
+                ((0.0, 0.0), (14.0, -2.0), 2.2),
+                ((14.0, -2.0), (12.0, -11.0), 2.2),
+                ((0.0, 0.0), (0.0, -10.0), 2.2),
+                ((0.0, -10.0), (-12.0, -8.0), 2.2),
+                ((-12.0, -8.0), (-14.0, 2.0), 2.2),
+                ((-14.0, 2.0), (0.0, 0.0), 2.2),
+            ];
+            for (from, to, th) in hallways {
+                draw_map_hallway(
+                    painter, from, to, th, center, origin, radar, local_pos, scale_half, rect,
+                );
+            }
+
+            let rooms = [
+                ("Campfire", (0.0, 0.0), (7.5, 7.5), 0),
+                ("Kitchen", (-8.0, 8.0), (6.0, 5.5), 0),
+                ("Greenhouse", (8.0, 8.0), (6.0, 5.5), 0),
+                ("Laboratory", (14.0, -2.0), (6.5, 6.0), 0),
+                ("Communications", (12.0, -11.0), (5.5, 5.0), 0),
+                ("Storage", (0.0, -10.0), (7.0, 6.0), 0),
+                ("Reactor", (-12.0, -8.0), (6.0, 6.0), 4),
+                ("Lookout", (-14.0, 2.0), (5.5, 5.0), 0),
+            ];
+            for (name, pos, size, ch) in rooms {
+                draw_chamfered_room(
+                    painter, name, pos, size, ch, center, origin, radar, local_pos, scale_half,
+                    rect,
+                );
+            }
         }
     }
 }
