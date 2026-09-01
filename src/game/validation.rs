@@ -225,6 +225,8 @@ impl<'a> PlayerValidator<'a> {
             }
         }
 
+        let is_vanished = role == RoleType::Phantom && !is_dead;
+
         Ok(PlayerSnapshot {
             name,
             color_id,
@@ -241,6 +243,7 @@ impl<'a> PlayerValidator<'a> {
             shapeshift_target,
             voted_for: None,
             was_ejected,
+            is_vanished,
         })
     }
 

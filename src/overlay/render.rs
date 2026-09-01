@@ -6,7 +6,6 @@ use egui::{
     Vec2,
 };
 
-use crate::game::player::PlayerSnapshot;
 use crate::game::role::{color_name, color_rgb, RoleType};
 use crate::game::state::OverlayStatus;
 use crate::overlay::theme::ThemeConfig;
@@ -325,30 +324,30 @@ fn draw_header(
 fn draw_tab_bar_horizontal(ui: &mut Ui, radar: &mut RadarState) {
     ui.horizontal(|ui| {
         let btn_players =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Players, "Players List");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Players, "👥 Players List");
         if btn_players.clicked() {
             radar.selected_tab = OverlayTab::Players;
         }
 
         let btn_tracers =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Tracers, "Radar/ESP");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Tracers, "📡 Radar/ESP");
         if btn_tracers.clicked() {
             radar.selected_tab = OverlayTab::Tracers;
         }
 
-        let btn_logs = ui.selectable_label(radar.selected_tab == OverlayTab::Logs, "Console Logs");
+        let btn_logs = ui.selectable_label(radar.selected_tab == OverlayTab::Logs, "📋 Console Logs");
         if btn_logs.clicked() {
             radar.selected_tab = OverlayTab::Logs;
         }
 
         let btn_cheat =
-            ui.selectable_label(radar.selected_tab == OverlayTab::CheatSheet, "Cheat Sheet");
+            ui.selectable_label(radar.selected_tab == OverlayTab::CheatSheet, "📜 Cheat Sheet");
         if btn_cheat.clicked() {
             radar.selected_tab = OverlayTab::CheatSheet;
         }
 
         let btn_themes =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "Themes & Style");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "🎨 Themes & Style");
         if btn_themes.clicked() {
             radar.selected_tab = OverlayTab::Themes;
         }
@@ -712,24 +711,12 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         local_color,
     );
 
-    // Count Alive Impostors and Crew
-    let alive_impostors: Vec<&PlayerSnapshot> = state
-        .players
-        .iter()
-        .filter(|p| !p.is_dead && !p.disconnected && p.role.is_impostor_team())
-        .collect();
-    let alive_crew_count = state
-        .players
-        .iter()
-        .filter(|p| !p.is_dead && !p.disconnected && !p.role.is_impostor_team())
-        .count();
-
     // Check closest alive impostor for danger alert
-    let closest_threat = alive_impostors
+    let closest_threat = state
+        .players
         .iter()
-        .filter(|p| !p.is_local && p.distance > 0.05)
-        .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal))
-        .copied();
+        .filter(|p| !p.is_local && !p.is_dead && !p.disconnected && p.role.is_impostor_team() && p.distance > 0.05)
+        .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
 
     // Check closest dead body
     let closest_body = state
@@ -743,19 +730,8 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         })
         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Draw Top Status & Threat Alert Banners
+    // Draw Threat Alert Banners
     let mut top_offset = 6.0;
-    
-    // Top Overview Line
-    let stats_text = format!("🔴 Impostors: {}   🟢 Crewmates: {}", alive_impostors.len(), alive_crew_count);
-    painter.text(
-        Pos2::new(rect.left() + 8.0, rect.top() + top_offset),
-        Align2::LEFT_TOP,
-        stats_text,
-        FontId::proportional(11.0),
-        Color32::from_rgb(220, 235, 255),
-    );
-    top_offset += 16.0;
 
     // Danger Alert Banner if impostor nearby
     if let Some(imp) = closest_threat {
@@ -1425,6 +1401,39 @@ fn draw_event_logs(
                         RichText::new(&event.message)
                             .strong()
                             .color(Color32::from_rgb(255, 140, 180)),
+                    );
+                }
+            }
+        });
+
+        ui.add_space(6.0);
+
+        // Phantom Vanish & Unvanish Feed
+        ui.group(|ui| {
+            ui.label(
+                RichText::new("Phantom Vanishes")
+                    .strong()
+                    .color(Color32::from_rgb(210, 100, 255)),
+            );
+            ui.add_space(2.0);
+
+            if state.vanish_events.is_empty() {
+                ui.label(
+                    RichText::new("No phantom vanishes detected yet")
+                        .italics()
+                        .color(Color32::from_rgb(160, 170, 180)),
+                );
+            } else {
+                for event in &state.vanish_events {
+                    let col = if event.is_vanished {
+                        Color32::from_rgb(220, 110, 255)
+                    } else {
+                        Color32::from_rgb(170, 195, 255)
+                    };
+                    ui.label(
+                        RichText::new(&event.message)
+                            .strong()
+                            .color(col),
                     );
                 }
             }
