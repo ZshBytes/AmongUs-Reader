@@ -49,12 +49,23 @@ pub enum OverlayTab {
     Themes,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum RadarMap {
+    None,
+    Skeld,
+    MiraHq,
+    Polus,
+    Airship,
+    Fungle,
+}
+
 #[derive(Debug, Clone)]
 pub struct RadarState {
     pub scale: f32,
     pub show_tracers: bool,
     pub filter: PlayerFilter,
     pub origin: LineOrigin,
+    pub map: RadarMap,
     pub selected_tab: OverlayTab,
     pub theme: ThemeConfig,
     pub smoothed_positions: HashMap<u8, (f32, f32)>,
@@ -68,6 +79,7 @@ impl Default for RadarState {
             show_tracers: true,
             filter: PlayerFilter::All,
             origin: LineOrigin::LocalPlayer,
+            map: RadarMap::None,
             selected_tab: OverlayTab::Players,
             theme: ThemeConfig::load(),
             smoothed_positions: HashMap::new(),
@@ -88,6 +100,7 @@ pub fn draw_overlay(
     ctx.request_repaint();
     let mut action = OverlayAction::None;
     let bg_color = radar.theme.bg_color32();
+    let corner_round = radar.theme.corner_rounding;
 
     let output = ctx.run(raw_input, |ctx| {
         egui::CentralPanel::default()
@@ -95,7 +108,7 @@ pub fn draw_overlay(
                 egui::Frame::none()
                     .fill(bg_color)
                     .inner_margin(8.0)
-                    .rounding(5.0),
+                    .rounding(corner_round),
             )
             .show(ctx, |ui| {
                 draw_header(
@@ -109,34 +122,23 @@ pub fn draw_overlay(
                 );
                 ui.separator();
 
-                draw_tab_bar(ui, radar);
-                ui.add_space(3.0);
-
-                match radar.selected_tab {
-                    OverlayTab::Players => {
-                        if !state.players.is_empty() {
-                            draw_player_list(ui, state, &mut action, radar);
-                        } else {
-                            draw_idle(ui, state);
-                        }
+                match radar.theme.tab_layout {
+                    crate::overlay::theme::TabLayout::Horizontal => {
+                        draw_tab_bar_horizontal(ui, radar);
+                        ui.add_space(3.0);
+                        draw_tab_content(ui, state, &mut action, radar);
                     }
-                    OverlayTab::Tracers => {
-                        if !state.players.is_empty() {
-                            draw_tracer_controls(ui, radar);
-                            ui.add_space(3.0);
-                            draw_tracers_canvas(ui, state, radar);
-                        } else {
-                            draw_idle(ui, state);
-                        }
-                    }
-                    OverlayTab::Logs => {
-                        draw_event_logs(ui, state, &mut action, radar);
-                    }
-                    OverlayTab::CheatSheet => {
-                        draw_cheat_sheet(ui);
-                    }
-                    OverlayTab::Themes => {
-                        draw_theme_settings(ui, radar);
+                    crate::overlay::theme::TabLayout::Vertical => {
+                        ui.horizontal_top(|ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(110.0);
+                                draw_tab_bar_vertical(ui, radar);
+                            });
+                            ui.separator();
+                            ui.vertical(|ui| {
+                                draw_tab_content(ui, state, &mut action, radar);
+                            });
+                        });
                     }
                 }
 
@@ -144,6 +146,41 @@ pub fn draw_overlay(
             });
     });
     (output, action)
+}
+
+fn draw_tab_content(
+    ui: &mut Ui,
+    state: &OverlayStatus,
+    action: &mut OverlayAction,
+    radar: &mut RadarState,
+) {
+    match radar.selected_tab {
+        OverlayTab::Players => {
+            if !state.players.is_empty() {
+                draw_player_list(ui, state, action, radar);
+            } else {
+                draw_idle(ui, state);
+            }
+        }
+        OverlayTab::Tracers => {
+            if !state.players.is_empty() {
+                draw_tracer_controls(ui, radar);
+                ui.add_space(3.0);
+                draw_tracers_canvas(ui, state, radar);
+            } else {
+                draw_idle(ui, state);
+            }
+        }
+        OverlayTab::Logs => {
+            draw_event_logs(ui, state, action, radar);
+        }
+        OverlayTab::CheatSheet => {
+            draw_cheat_sheet(ui);
+        }
+        OverlayTab::Themes => {
+            draw_theme_settings(ui, radar);
+        }
+    }
 }
 
 fn draw_header(
@@ -272,7 +309,7 @@ fn draw_header(
     });
 }
 
-fn draw_tab_bar(ui: &mut Ui, radar: &mut RadarState) {
+fn draw_tab_bar_horizontal(ui: &mut Ui, radar: &mut RadarState) {
     ui.horizontal(|ui| {
         let btn_players =
             ui.selectable_label(radar.selected_tab == OverlayTab::Players, "Players List");
@@ -298,7 +335,57 @@ fn draw_tab_bar(ui: &mut Ui, radar: &mut RadarState) {
         }
 
         let btn_themes =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "Themes & Colors");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "Themes & Style");
+        if btn_themes.clicked() {
+            radar.selected_tab = OverlayTab::Themes;
+        }
+    });
+}
+
+fn draw_tab_bar_vertical(ui: &mut Ui, radar: &mut RadarState) {
+    ui.vertical(|ui| {
+        ui.set_min_width(115.0);
+
+        let btn_players = ui.add_sized(
+            [110.0, 24.0],
+            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Players, "Players List"),
+        );
+        if btn_players.clicked() {
+            radar.selected_tab = OverlayTab::Players;
+        }
+        ui.add_space(2.0);
+
+        let btn_tracers = ui.add_sized(
+            [110.0, 24.0],
+            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Tracers, "Radar/ESP"),
+        );
+        if btn_tracers.clicked() {
+            radar.selected_tab = OverlayTab::Tracers;
+        }
+        ui.add_space(2.0);
+
+        let btn_logs = ui.add_sized(
+            [110.0, 24.0],
+            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Logs, "Console Logs"),
+        );
+        if btn_logs.clicked() {
+            radar.selected_tab = OverlayTab::Logs;
+        }
+        ui.add_space(2.0);
+
+        let btn_cheat = ui.add_sized(
+            [110.0, 24.0],
+            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::CheatSheet, "Cheat Sheet"),
+        );
+        if btn_cheat.clicked() {
+            radar.selected_tab = OverlayTab::CheatSheet;
+        }
+        ui.add_space(2.0);
+
+        let btn_themes = ui.add_sized(
+            [110.0, 24.0],
+            egui::SelectableLabel::new(radar.selected_tab == OverlayTab::Themes, "Themes & Style"),
+        );
         if btn_themes.clicked() {
             radar.selected_tab = OverlayTab::Themes;
         }
@@ -306,7 +393,7 @@ fn draw_tab_bar(ui: &mut Ui, radar: &mut RadarState) {
 }
 
 fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let tracer_color = if radar.show_tracers {
             Color32::from_rgb(80, 220, 120)
         } else {
@@ -327,18 +414,18 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
             radar.show_tracers = !radar.show_tracers;
         }
 
-        ui.add_space(3.0);
+        ui.add_space(2.0);
 
         let (filter_text, filter_color) = match radar.filter {
             PlayerFilter::All => ("Filter: All", radar.theme.accent_color32()),
             PlayerFilter::ImpostorsOnly => (
-                "Filter: Impostors Only",
+                "Filter: Impostors",
                 radar.theme.impostor_line_color32(),
             ),
             PlayerFilter::CrewmatesOnly => {
-                ("Filter: Crewmates Only", Color32::from_rgb(90, 220, 150))
+                ("Filter: Crewmates", Color32::from_rgb(90, 220, 150))
             }
-            PlayerFilter::DeadOnly => ("Filter: Dead Bodies Only", Color32::from_rgb(255, 90, 90)),
+            PlayerFilter::DeadOnly => ("Filter: Dead Bodies", Color32::from_rgb(255, 90, 90)),
             PlayerFilter::ImpostorsAndDead => (
                 "Filter: Impostors + Bodies",
                 Color32::from_rgb(255, 140, 60),
@@ -357,11 +444,36 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
             };
         }
 
-        ui.add_space(3.0);
+        ui.add_space(2.0);
+
+        let (map_text, map_color) = match radar.map {
+            RadarMap::None => ("Map: None", Color32::from_rgb(170, 170, 170)),
+            RadarMap::Skeld => ("Map: The Skeld", Color32::from_rgb(80, 200, 255)),
+            RadarMap::MiraHq => ("Map: MIRA HQ", Color32::from_rgb(100, 230, 160)),
+            RadarMap::Polus => ("Map: Polus", Color32::from_rgb(180, 140, 255)),
+            RadarMap::Airship => ("Map: The Airship", Color32::from_rgb(255, 170, 60)),
+            RadarMap::Fungle => ("Map: The Fungle", Color32::from_rgb(240, 120, 180)),
+        };
+        if ui
+            .button(RichText::new(map_text).small().color(map_color))
+            .on_hover_text("Cycle radar tactical map background")
+            .clicked()
+        {
+            radar.map = match radar.map {
+                RadarMap::None => RadarMap::Skeld,
+                RadarMap::Skeld => RadarMap::MiraHq,
+                RadarMap::MiraHq => RadarMap::Polus,
+                RadarMap::Polus => RadarMap::Airship,
+                RadarMap::Airship => RadarMap::Fungle,
+                RadarMap::Fungle => RadarMap::None,
+            };
+        }
+
+        ui.add_space(2.0);
 
         let origin_text = match radar.origin {
-            LineOrigin::LocalPlayer => "Origin: Local Player",
-            LineOrigin::BottomCenter => "Origin: Bottom Center",
+            LineOrigin::LocalPlayer => "Origin: Local",
+            LineOrigin::BottomCenter => "Origin: Bottom",
         };
         if ui
             .button(
@@ -377,11 +489,11 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
             };
         }
 
-        ui.add_space(3.0);
+        ui.add_space(2.0);
 
         if ui
             .button("-")
-            .on_hover_text("Decrease Scale / FOV")
+            .on_hover_text("Decrease Scale / Zoom Out")
             .clicked()
         {
             radar.scale = (radar.scale - 10.0).max(20.0);
@@ -389,12 +501,137 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
         ui.label(RichText::new(format!("{:.0}px", radar.scale)).small());
         if ui
             .button("+")
-            .on_hover_text("Increase Scale / FOV")
+            .on_hover_text("Increase Scale / Zoom In")
             .clicked()
         {
             radar.scale = (radar.scale + 10.0).min(300.0);
         }
     });
+}
+
+fn draw_map_blueprint(
+    painter: &egui::Painter,
+    map: RadarMap,
+    origin: Pos2,
+    center: Pos2,
+    radar: &RadarState,
+    local_pos: (f32, f32),
+    rect: egui::Rect,
+) {
+    let rooms: &[(&str, f32, f32, f32, f32)] = match map {
+        RadarMap::None => return,
+        RadarMap::Skeld => &[
+            ("Cafeteria", -1.0, 2.5, 9.0, 7.0),
+            ("Weapons", 9.0, 1.5, 5.0, 5.0),
+            ("O2", 4.5, -3.0, 4.0, 4.0),
+            ("Navigation", 16.5, -5.0, 5.5, 6.0),
+            ("Shields", 9.5, -12.0, 5.5, 5.5),
+            ("Comms", 4.0, -15.5, 4.5, 4.0),
+            ("Storage", -1.0, -12.0, 8.0, 7.0),
+            ("Admin", 4.5, -7.5, 5.5, 4.5),
+            ("Electrical", -7.5, -8.5, 6.0, 5.5),
+            ("Lower Engine", -16.0, -11.0, 6.0, 6.0),
+            ("Security", -12.5, -3.0, 4.5, 4.5),
+            ("Reactor", -20.5, -5.0, 5.5, 8.0),
+            ("Upper Engine", -16.0, 3.0, 6.0, 6.0),
+            ("MedBay", -9.0, -1.5, 5.0, 5.0),
+        ],
+        RadarMap::MiraHq => &[
+            ("Launchpad", -5.0, 2.0, 8.0, 6.0),
+            ("MedBay", 4.0, 2.0, 5.0, 5.0),
+            ("Communications", 10.0, 6.0, 5.0, 4.5),
+            ("Locker Room", 10.0, 12.0, 5.0, 5.0),
+            ("Reactor", 1.0, 16.0, 6.0, 6.0),
+            ("Laboratory", 8.0, 20.0, 6.0, 5.5),
+            ("Office", 16.0, 20.0, 5.0, 5.0),
+            ("Admin", 22.0, 20.0, 5.0, 5.0),
+            ("Greenhouse", 28.0, 20.0, 6.0, 6.0),
+            ("Cafeteria", 28.0, 14.0, 7.0, 6.0),
+            ("Balcony", 28.0, 7.0, 6.0, 5.0),
+        ],
+        RadarMap::Polus => &[
+            ("Dropship", 0.0, 15.0, 7.0, 6.0),
+            ("Weapons", 12.0, 10.0, 5.5, 5.0),
+            ("O2", 2.0, 6.0, 5.0, 4.5),
+            ("Comms", -16.0, 2.0, 5.0, 4.5),
+            ("Security", -13.0, -4.0, 4.5, 4.5),
+            ("Electrical", -8.0, -11.0, 5.5, 5.0),
+            ("Storage", 0.0, -5.0, 7.0, 6.5),
+            ("Office", 18.0, 0.0, 6.5, 6.0),
+            ("Admin", 20.0, -7.0, 5.5, 5.0),
+            ("Laboratory", 15.0, -15.0, 7.0, 6.5),
+            ("Specimen", -11.0, -18.0, 6.0, 5.5),
+        ],
+        RadarMap::Airship => &[
+            ("Cockpit", -19.0, 1.0, 6.0, 6.0),
+            ("Vault", -10.0, 10.0, 6.0, 5.0),
+            ("Brig", -12.0, -7.0, 5.5, 5.5),
+            ("Engine Room", -1.0, 0.0, 8.0, 7.0),
+            ("Armory", -5.0, 10.0, 5.5, 5.0),
+            ("Records", 14.0, 9.0, 6.5, 5.5),
+            ("Lounge", 25.0, 9.0, 6.5, 5.5),
+            ("Cargo Bay", 28.0, -1.0, 7.0, 6.5),
+            ("Medical", 17.0, -1.0, 5.5, 5.0),
+            ("Showers", 19.0, -9.0, 6.0, 5.5),
+            ("Main Hall", 9.0, 0.0, 6.0, 6.0),
+            ("Meeting Room", 9.0, -13.0, 7.0, 6.0),
+            ("Electrical", -2.0, -10.0, 6.5, 6.0),
+        ],
+        RadarMap::Fungle => &[
+            ("Campfire", 0.0, 0.0, 7.0, 7.0),
+            ("Kitchen", -8.0, 8.0, 6.0, 5.5),
+            ("Greenhouse", 8.0, 8.0, 6.0, 5.5),
+            ("Laboratory", 14.0, -2.0, 6.5, 6.0),
+            ("Comms", 12.0, -11.0, 5.5, 5.0),
+            ("Storage", 0.0, -10.0, 7.0, 6.0),
+            ("Reactor", -12.0, -8.0, 6.0, 6.0),
+            ("Lookout", -14.0, 2.0, 5.5, 5.0),
+        ],
+    };
+
+    let scale_half = radar.scale * 0.5;
+
+    for &(name, rx, ry, rw, rh) in rooms {
+        let dx = rx - local_pos.0;
+        let dy = ry - local_pos.1;
+
+        let cx = center.x + (dx * scale_half);
+        let cy = match radar.origin {
+            LineOrigin::LocalPlayer => center.y - (dy * scale_half),
+            LineOrigin::BottomCenter => {
+                origin.y - 20.0 - (dy.max(0.0) * scale_half + (dx.abs() * 0.2 * scale_half))
+            }
+        };
+
+        let w = rw * scale_half;
+        let h = rh * scale_half;
+
+        let room_rect = egui::Rect::from_center_size(Pos2::new(cx, cy), Vec2::new(w, h));
+        if !rect.intersects(room_rect) {
+            continue;
+        }
+
+        painter.rect_filled(
+            room_rect,
+            3.0,
+            Color32::from_rgba_unmultiplied(25, 45, 75, 40),
+        );
+        painter.rect_stroke(
+            room_rect,
+            3.0,
+            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(65, 120, 190, 75)),
+        );
+
+        if w > 32.0 && h > 18.0 {
+            painter.text(
+                room_rect.center(),
+                Align2::CENTER_CENTER,
+                name,
+                FontId::proportional(9.0),
+                Color32::from_rgba_unmultiplied(160, 200, 245, 110),
+            );
+        }
+    }
 }
 
 fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarState) {
@@ -446,6 +683,44 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         LineOrigin::BottomCenter => Pos2::new(center.x, rect.bottom() - 10.0),
     };
 
+    let local_player = state.players.iter().find(|p| p.is_local);
+    let local_pos = local_player.map(|p| p.position).unwrap_or((0.0, 0.0));
+
+    // Draw Radar Range Circles and Crosshairs if enabled
+    if radar.theme.show_radar_grid {
+        let grid_col = Color32::from_rgba_unmultiplied(70, 110, 160, 35);
+        let text_col = Color32::from_rgba_unmultiplied(120, 160, 210, 75);
+
+        // Crosshairs
+        painter.line_segment(
+            [Pos2::new(rect.left(), origin.y), Pos2::new(rect.right(), origin.y)],
+            Stroke::new(1.0_f32, grid_col),
+        );
+        painter.line_segment(
+            [Pos2::new(origin.x, rect.top()), Pos2::new(origin.x, rect.bottom())],
+            Stroke::new(1.0_f32, grid_col),
+        );
+
+        // Range circles
+        let scale_half = radar.scale * 0.5;
+        for dist in [5.0, 10.0, 15.0, 20.0, 30.0] {
+            let radius = dist * scale_half;
+            if radius < rect.width() {
+                painter.circle_stroke(origin, radius, Stroke::new(1.0_f32, grid_col));
+                painter.text(
+                    Pos2::new(origin.x + radius + 2.0, origin.y - 2.0),
+                    Align2::LEFT_BOTTOM,
+                    format!("{dist:.0}m"),
+                    FontId::proportional(8.5),
+                    text_col,
+                );
+            }
+        }
+    }
+
+    // Draw Map Blueprint background if selected
+    draw_map_blueprint(&painter, radar.map, origin, center, radar, local_pos, rect);
+
     let local_color = radar.theme.local_player_color32();
     painter.circle_filled(origin, 5.0, local_color);
     painter.circle_stroke(
@@ -463,9 +738,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         FontId::proportional(10.0),
         local_color,
     );
-
-    let local_player = state.players.iter().find(|p| p.is_local);
-    let local_pos = local_player.map(|p| p.position).unwrap_or((0.0, 0.0));
 
     // 1. Draw alive players (Skip ghosts)
     for player in &state.players {
@@ -534,7 +806,10 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             } else {
                 Color32::from_rgba_unmultiplied(role_col.r(), role_col.g(), role_col.b(), 180)
             };
-            painter.line_segment([origin, target_pt], Stroke::new(1.6_f32, line_color));
+            painter.line_segment(
+                [origin, target_pt],
+                Stroke::new(radar.theme.tracer_thickness, line_color),
+            );
         }
 
         painter.circle_filled(target_pt, 5.0, player_col);
@@ -547,19 +822,38 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         };
         painter.circle_stroke(target_pt, 5.0, Stroke::new(1.4_f32, outline_col));
 
-        let mut label_text = format!("{} [{}] - {:.1}m", player.name, player.role, distance);
-        if player.in_vent {
-            label_text = format!("[VENT] {label_text}");
-        } else if player.shapeshifting {
-            label_text = format!("[SHAPESHIFTED] {label_text}");
-        }
-
-        let text_color = if player.in_vent {
-            Color32::from_rgb(255, 160, 50)
-        } else if is_imp {
-            Color32::from_rgb(255, 110, 110)
+        let dist_str = if distance > 0.1 {
+            format!(" ({:.1}m)", distance)
         } else {
-            role_col
+            String::new()
+        };
+
+        let label_text = if player.shapeshifting {
+            let morph_target = if let Some(tid) = player.shapeshift_target {
+                state
+                    .players
+                    .iter()
+                    .find(|p| p.player_id == tid)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("Target")
+            } else {
+                "Target"
+            };
+            format!("{} [SS: {}]{}", player.name, morph_target, dist_str)
+        } else if player.in_vent {
+            format!("{} [VENT]{}", player.name, dist_str)
+        } else {
+            format!("{}{}", player.name, dist_str)
+        };
+
+        let text_color = if player.shapeshifting {
+            Color32::from_rgb(255, 90, 120)
+        } else if player.in_vent {
+            Color32::from_rgb(255, 140, 40)
+        } else if is_imp {
+            Color32::from_rgb(255, 80, 80)
+        } else {
+            Color32::from_rgb(220, 235, 255)
         };
 
         painter.text(
@@ -608,7 +902,10 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             if radar.show_tracers {
                 painter.line_segment(
                     [origin, target_pt],
-                    Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(255, 60, 60, 220)),
+                    Stroke::new(
+                        radar.theme.tracer_thickness,
+                        Color32::from_rgba_unmultiplied(255, 60, 60, 220),
+                    ),
                 );
             }
 
@@ -1190,6 +1487,93 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
 
     let max_h = ui.available_height().max(200.0);
     ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
+        ui.group(|ui| {
+            ui.label(
+                RichText::new("GUI Layout & Style")
+                    .strong()
+                    .color(radar.theme.accent_color32()),
+            );
+            ui.add_space(4.0);
+
+            let mut changed = false;
+
+            ui.horizontal(|ui| {
+                ui.label("Tab Layout:");
+                let is_horiz =
+                    radar.theme.tab_layout == crate::overlay::theme::TabLayout::Horizontal;
+                if ui.selectable_label(is_horiz, "Horizontal (Top)").clicked() {
+                    radar.theme.tab_layout = crate::overlay::theme::TabLayout::Horizontal;
+                    changed = true;
+                }
+                let is_vert =
+                    radar.theme.tab_layout == crate::overlay::theme::TabLayout::Vertical;
+                if ui
+                    .selectable_label(is_vert, "Vertical (Sidebar)")
+                    .clicked()
+                {
+                    radar.theme.tab_layout = crate::overlay::theme::TabLayout::Vertical;
+                    changed = true;
+                }
+            });
+            ui.add_space(2.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Corner Rounding:");
+                if ui
+                    .add(
+                        egui::Slider::new(&mut radar.theme.corner_rounding, 0.0..=16.0)
+                            .suffix("px"),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Background Opacity:");
+                if ui
+                    .add(egui::Slider::new(&mut radar.theme.card_opacity, 100..=255))
+                    .changed()
+                {
+                    radar.theme.background[3] = radar.theme.card_opacity;
+                    radar.theme.canvas[3] = radar.theme.card_opacity;
+                    changed = true;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Tracer Thickness:");
+                if ui
+                    .add(
+                        egui::Slider::new(&mut radar.theme.tracer_thickness, 1.0..=4.0)
+                            .suffix("px"),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(
+                        &mut radar.theme.show_radar_grid,
+                        "Show Radar Range Circles & Crosshairs",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            if changed {
+                radar.theme.save();
+            }
+        });
+
+        ui.add_space(6.0);
+
         ui.group(|ui| {
             ui.label(
                 RichText::new("Color Presets")

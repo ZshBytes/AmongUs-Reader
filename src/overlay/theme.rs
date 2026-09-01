@@ -5,7 +5,37 @@ use crate::game::role::RoleType;
 
 pub const THEME_FILE: &str = "theme.toml";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TabLayout {
+    Horizontal,
+    Vertical,
+}
+
+fn default_tab_layout() -> TabLayout {
+    TabLayout::Horizontal
+}
+
+fn default_corner_rounding() -> f32 {
+    6.0
+}
+
+fn default_card_opacity() -> u8 {
+    240
+}
+
+fn default_font_scale() -> f32 {
+    1.0
+}
+
+fn default_show_radar_grid() -> bool {
+    true
+}
+
+fn default_tracer_thickness() -> f32 {
+    1.8
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ThemeConfig {
     pub name: String,
     pub background: [u8; 4],
@@ -15,6 +45,18 @@ pub struct ThemeConfig {
     pub header_text: [u8; 4],
     pub local_player: [u8; 4],
     pub impostor_line: [u8; 4],
+    #[serde(default = "default_tab_layout")]
+    pub tab_layout: TabLayout,
+    #[serde(default = "default_corner_rounding")]
+    pub corner_rounding: f32,
+    #[serde(default = "default_card_opacity")]
+    pub card_opacity: u8,
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f32,
+    #[serde(default = "default_show_radar_grid")]
+    pub show_radar_grid: bool,
+    #[serde(default = "default_tracer_thickness")]
+    pub tracer_thickness: f32,
     #[serde(default = "default_crewmate")]
     pub crewmate: [u8; 4],
     #[serde(default = "default_impostor")]
@@ -105,6 +147,12 @@ impl ThemeConfig {
             header_text: [220, 230, 255, 255],
             local_player: [60, 220, 255, 255],
             impostor_line: [255, 50, 50, 220],
+            tab_layout: default_tab_layout(),
+            corner_rounding: default_corner_rounding(),
+            card_opacity: default_card_opacity(),
+            font_scale: default_font_scale(),
+            show_radar_grid: default_show_radar_grid(),
+            tracer_thickness: default_tracer_thickness(),
             crewmate: default_crewmate(),
             impostor: default_impostor(),
             scientist: default_scientist(),
@@ -132,6 +180,12 @@ impl ThemeConfig {
             header_text: [240, 210, 255, 255],
             local_player: [210, 120, 255, 255],
             impostor_line: [255, 40, 120, 220],
+            tab_layout: default_tab_layout(),
+            corner_rounding: default_corner_rounding(),
+            card_opacity: default_card_opacity(),
+            font_scale: default_font_scale(),
+            show_radar_grid: default_show_radar_grid(),
+            tracer_thickness: default_tracer_thickness(),
             crewmate: [180, 170, 255, 255],
             impostor: [255, 50, 140, 255],
             scientist: [120, 210, 255, 255],
@@ -159,6 +213,12 @@ impl ThemeConfig {
             header_text: [0, 240, 255, 255],
             local_player: [0, 240, 255, 255],
             impostor_line: [255, 30, 90, 230],
+            tab_layout: default_tab_layout(),
+            corner_rounding: default_corner_rounding(),
+            card_opacity: default_card_opacity(),
+            font_scale: default_font_scale(),
+            show_radar_grid: default_show_radar_grid(),
+            tracer_thickness: default_tracer_thickness(),
             crewmate: [0, 220, 255, 255],
             impostor: [255, 30, 90, 255],
             scientist: [0, 240, 255, 255],
@@ -186,6 +246,12 @@ impl ThemeConfig {
             header_text: [120, 255, 160, 255],
             local_player: [80, 255, 140, 255],
             impostor_line: [255, 70, 70, 220],
+            tab_layout: default_tab_layout(),
+            corner_rounding: default_corner_rounding(),
+            card_opacity: default_card_opacity(),
+            font_scale: default_font_scale(),
+            show_radar_grid: default_show_radar_grid(),
+            tracer_thickness: default_tracer_thickness(),
             crewmate: [100, 240, 160, 255],
             impostor: [255, 60, 60, 255],
             scientist: [70, 230, 200, 255],
@@ -213,6 +279,12 @@ impl ThemeConfig {
             header_text: [255, 200, 205, 255],
             local_player: [255, 100, 110, 255],
             impostor_line: [255, 30, 30, 230],
+            tab_layout: default_tab_layout(),
+            corner_rounding: default_corner_rounding(),
+            card_opacity: default_card_opacity(),
+            font_scale: default_font_scale(),
+            show_radar_grid: default_show_radar_grid(),
+            tracer_thickness: default_tracer_thickness(),
             crewmate: [220, 180, 180, 255],
             impostor: [255, 30, 30, 255],
             scientist: [100, 200, 255, 255],

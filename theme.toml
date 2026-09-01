@@ -1,4 +1,10 @@
 name = "dark"
+tab_layout = "Horizontal"
+corner_rounding = 6.0
+card_opacity = 240
+font_scale = 1.0
+show_radar_grid = true
+tracer_thickness = 1.8
 background = [
     10,
     12,
