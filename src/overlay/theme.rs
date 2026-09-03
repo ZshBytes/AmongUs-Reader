@@ -11,6 +11,62 @@ pub enum TabLayout {
     Vertical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlayerTabBlock {
+    QuickSettings,
+    VotingMatrix,
+    PlayerCards,
+    KillFeed,
+}
+
+impl PlayerTabBlock {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PlayerTabBlock::QuickSettings => "Quick Settings (Host Rules)",
+            PlayerTabBlock::VotingMatrix => "Meeting Voting Matrix",
+            PlayerTabBlock::PlayerCards => "Player Data",
+            PlayerTabBlock::KillFeed => "Recent Kill Feed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LogsTabBlock {
+    VotingMatrix,
+    ConsoleControls,
+    KillFeed,
+    Shapeshifts,
+}
+
+impl LogsTabBlock {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            LogsTabBlock::VotingMatrix => "Meeting Voting Matrix",
+            LogsTabBlock::ConsoleControls => "Console Logging Controls",
+            LogsTabBlock::KillFeed => "Kill & Death History",
+            LogsTabBlock::Shapeshifts => "Shapeshifts History",
+        }
+    }
+}
+
+pub fn default_player_blocks() -> Vec<PlayerTabBlock> {
+    vec![
+        PlayerTabBlock::QuickSettings,
+        PlayerTabBlock::VotingMatrix,
+        PlayerTabBlock::PlayerCards,
+        PlayerTabBlock::KillFeed,
+    ]
+}
+
+pub fn default_logs_blocks() -> Vec<LogsTabBlock> {
+    vec![
+        LogsTabBlock::VotingMatrix,
+        LogsTabBlock::ConsoleControls,
+        LogsTabBlock::KillFeed,
+        LogsTabBlock::Shapeshifts,
+    ]
+}
+
 fn default_tab_layout() -> TabLayout {
     TabLayout::Horizontal
 }
@@ -47,6 +103,10 @@ pub struct ThemeConfig {
     pub impostor_line: [u8; 4],
     #[serde(default = "default_tab_layout")]
     pub tab_layout: TabLayout,
+    #[serde(default = "default_player_blocks")]
+    pub player_blocks_order: Vec<PlayerTabBlock>,
+    #[serde(default = "default_logs_blocks")]
+    pub logs_blocks_order: Vec<LogsTabBlock>,
     #[serde(default = "default_corner_rounding")]
     pub corner_rounding: f32,
     #[serde(default = "default_card_opacity")]
@@ -148,6 +208,8 @@ impl ThemeConfig {
             local_player: [60, 220, 255, 255],
             impostor_line: [255, 50, 50, 220],
             tab_layout: default_tab_layout(),
+            player_blocks_order: default_player_blocks(),
+            logs_blocks_order: default_logs_blocks(),
             corner_rounding: default_corner_rounding(),
             card_opacity: default_card_opacity(),
             font_scale: default_font_scale(),
@@ -181,6 +243,8 @@ impl ThemeConfig {
             local_player: [210, 120, 255, 255],
             impostor_line: [255, 40, 120, 220],
             tab_layout: default_tab_layout(),
+            player_blocks_order: default_player_blocks(),
+            logs_blocks_order: default_logs_blocks(),
             corner_rounding: default_corner_rounding(),
             card_opacity: default_card_opacity(),
             font_scale: default_font_scale(),
@@ -214,6 +278,8 @@ impl ThemeConfig {
             local_player: [0, 240, 255, 255],
             impostor_line: [255, 30, 90, 230],
             tab_layout: default_tab_layout(),
+            player_blocks_order: default_player_blocks(),
+            logs_blocks_order: default_logs_blocks(),
             corner_rounding: default_corner_rounding(),
             card_opacity: default_card_opacity(),
             font_scale: default_font_scale(),
@@ -247,6 +313,8 @@ impl ThemeConfig {
             local_player: [80, 255, 140, 255],
             impostor_line: [255, 70, 70, 220],
             tab_layout: default_tab_layout(),
+            player_blocks_order: default_player_blocks(),
+            logs_blocks_order: default_logs_blocks(),
             corner_rounding: default_corner_rounding(),
             card_opacity: default_card_opacity(),
             font_scale: default_font_scale(),
@@ -280,6 +348,8 @@ impl ThemeConfig {
             local_player: [255, 100, 110, 255],
             impostor_line: [255, 30, 30, 230],
             tab_layout: default_tab_layout(),
+            player_blocks_order: default_player_blocks(),
+            logs_blocks_order: default_logs_blocks(),
             corner_rounding: default_corner_rounding(),
             card_opacity: default_card_opacity(),
             font_scale: default_font_scale(),
@@ -302,7 +372,7 @@ impl ThemeConfig {
         }
     }
 
-    /// Apply color settings from a preset while strictly preserving user layout preferences (tab layout, corner rounding, opacity, etc.)
+    // apply preset colors without overriding layout settings
     pub fn apply_color_preset(&mut self, preset: ThemeConfig) {
         self.name = preset.name;
         self.background = preset.background;

@@ -2,10 +2,7 @@ use crate::config::Il2CppConfig;
 use crate::memory::error::MemoryError;
 use crate::memory::reader::MemoryReader;
 
-/// Find the static fields memory block for an IL2CPP class.
-///
-/// Probes Il2CppClass.static_fields at several offsets, validating that
-/// the result is a heap pointer (non-null, readable, NOT inside GameAssembly).
+// find static fields block for an il2cpp class
 pub fn find_static_fields_block(
     reader: &MemoryReader<'_>,
     module_base: u64,
@@ -37,7 +34,7 @@ pub fn find_static_fields_block(
         }
     }
 
-    // Probe offsets for Il2CppClass.static_fields.
+    // fallback offsets for static fields
     let mut sf_offsets: Vec<u64> = vec![primary_sf_off];
     if pointer_size == 4 {
         for off in [
@@ -74,7 +71,7 @@ pub fn find_static_fields_block(
     Err(MemoryError::InvalidPointer(0))
 }
 
-/// Resolve a live IL2CPP singleton from a TypeInfo static pointer in GameAssembly.
+// resolve static singleton from typeinfo
 #[allow(dead_code)]
 pub fn resolve_static_instance(
     reader: &MemoryReader<'_>,

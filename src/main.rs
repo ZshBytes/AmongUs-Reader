@@ -48,8 +48,10 @@ fn spawn_scanner(offsets: Arc<Offsets>, shared: Arc<SharedGameState>) {
                                 connected: false,
                                 in_active_match: false,
                                 game_state: -1,
+                                room_code: String::new(),
                                 players: Vec::new(),
                                 status_message: format!("Waiting for Among Us ({err})"),
+                                lobby_rules: None,
                             });
                             thread::sleep(interval);
                             continue;
@@ -64,8 +66,10 @@ fn spawn_scanner(offsets: Arc<Offsets>, shared: Arc<SharedGameState>) {
                             connected: true,
                             in_active_match: false,
                             game_state: -1,
+                            room_code: String::new(),
                             players: Vec::new(),
                             status_message: format!("Scanning: {err}"),
+                            lobby_rules: None,
                         });
                     }
                 }

@@ -8,7 +8,9 @@ use egui::{
 
 use crate::game::role::{color_name, color_rgb, RoleType};
 use crate::game::state::OverlayStatus;
-use crate::overlay::theme::ThemeConfig;
+use crate::overlay::theme::{
+    default_logs_blocks, default_player_blocks, LogsTabBlock, PlayerTabBlock, ThemeConfig,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlayAction {
@@ -44,6 +46,7 @@ pub enum PlayerFilter {
 pub enum OverlayTab {
     Players,
     Tracers,
+    GameSettings,
     Logs,
     CheatSheet,
     Themes,
@@ -69,6 +72,9 @@ pub struct RadarState {
     pub smoothed_positions: HashMap<u8, (f32, f32)>,
     pub last_frame: Option<Instant>,
     pub map_textures: HashMap<RadarMap, egui::TextureHandle>,
+    pub is_edit_mode: bool,
+    pub confirm_reset_theme: bool,
+    pub confirm_reset_layout: bool,
 }
 
 impl std::fmt::Debug for RadarState {
@@ -83,6 +89,7 @@ impl std::fmt::Debug for RadarState {
             .field("map", &self.map)
             .field("selected_tab", &self.selected_tab)
             .field("theme", &self.theme)
+            .field("is_edit_mode", &self.is_edit_mode)
             .finish()
     }
 }
@@ -102,6 +109,9 @@ impl Default for RadarState {
             smoothed_positions: HashMap::new(),
             last_frame: None,
             map_textures: HashMap::new(),
+            is_edit_mode: false,
+            confirm_reset_theme: false,
+            confirm_reset_layout: false,
         }
     }
 }
@@ -116,6 +126,7 @@ pub fn draw_overlay(
     radar: &mut RadarState,
 ) -> (FullOutput, OverlayAction) {
     ctx.request_repaint();
+
     let mut action = OverlayAction::None;
     let bg_color = radar.theme.bg_color32();
     let corner_round = radar.theme.corner_rounding;
@@ -172,12 +183,43 @@ fn draw_tab_content(
     action: &mut OverlayAction,
     radar: &mut RadarState,
 ) {
+    if radar.is_edit_mode {
+        egui::Frame::none()
+            .fill(Color32::from_rgba_unmultiplied(60, 40, 10, 230))
+            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(255, 200, 50)))
+            .rounding(radar.theme.corner_rounding)
+            .inner_margin(6.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Edit Mode Active — Use [Move Up] and [Move Down] to reorder blocks")
+                            .small()
+                            .strong()
+                            .color(Color32::from_rgb(255, 220, 80)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(
+                                RichText::new("Exit Edit Mode")
+                                    .small()
+                                    .color(Color32::from_rgb(255, 255, 255)),
+                            )
+                            .clicked()
+                        {
+                            radar.is_edit_mode = false;
+                        }
+                    });
+                });
+            });
+        ui.add_space(4.0);
+    }
+
     match radar.selected_tab {
         OverlayTab::Players => {
             if !state.players.is_empty() {
                 draw_player_list(ui, state, action, radar);
             } else {
-                draw_idle(ui, state);
+                draw_idle(ui, state, radar);
             }
         }
         OverlayTab::Tracers => {
@@ -186,8 +228,11 @@ fn draw_tab_content(
                 ui.add_space(3.0);
                 draw_tracers_canvas(ui, state, radar);
             } else {
-                draw_idle(ui, state);
+                draw_idle(ui, state, radar);
             }
+        }
+        OverlayTab::GameSettings => {
+            draw_game_settings_tab(ui, state, radar);
         }
         OverlayTab::Logs => {
             draw_event_logs(ui, state, action, radar);
@@ -207,7 +252,7 @@ fn draw_header(
     toggle_key: &str,
     is_editing_key: &mut bool,
     key_buffer: &mut String,
-    radar: &RadarState,
+    radar: &mut RadarState,
     action: &mut OverlayAction,
 ) {
     let top_rect = ui.available_rect_before_wrap();
@@ -274,6 +319,24 @@ fn draw_header(
             btn.on_hover_text("Click to customize toggle key");
         }
 
+        let edit_text = if radar.is_edit_mode {
+            "[Edit: ON]"
+        } else {
+            "[Edit GUI]"
+        };
+        let edit_col = if radar.is_edit_mode {
+            Color32::from_rgb(255, 200, 60)
+        } else {
+            Color32::from_rgb(160, 180, 210)
+        };
+        if ui
+            .button(RichText::new(edit_text).small().color(edit_col))
+            .on_hover_text("Toggle GUI Edit Mode")
+            .clicked()
+        {
+            radar.is_edit_mode = !radar.is_edit_mode;
+        }
+
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let close_btn = ui.add(
                 egui::Button::new(
@@ -305,22 +368,17 @@ fn draw_header(
             };
             ui.label(RichText::new(label).small().color(dot_color));
 
-            // Kill cooldown indicator
-            if state.game_state == 2 {
-                if let Some(last_k) = state.last_kill_time {
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    let elapsed = (now_ms.saturating_sub(last_k) as f32) / 1000.0;
-                    if elapsed < 35.0 {
-                        let remaining = (35.0 - elapsed).max(0.0);
-                        ui.label(
-                            RichText::new(format!("CD: {:.0}s", remaining))
-                                .small()
-                                .color(Color32::from_rgb(255, 180, 70)),
-                        );
-                    }
+            if !state.room_code.is_empty() {
+                let resp = ui
+                    .button(
+                        RichText::new(format!("[Room: {}]", state.room_code))
+                            .small()
+                            .strong()
+                            .color(Color32::from_rgb(100, 210, 255)),
+                    )
+                    .on_hover_text("Click to copy room code to clipboard");
+                if resp.clicked() {
+                    ui.output_mut(|o| o.copied_text = state.room_code.clone());
                 }
             }
         });
@@ -330,30 +388,36 @@ fn draw_header(
 fn draw_tab_bar_horizontal(ui: &mut Ui, radar: &mut RadarState) {
     ui.horizontal(|ui| {
         let btn_players =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Players, "👥 Players List");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Players, "Players List");
         if btn_players.clicked() {
             radar.selected_tab = OverlayTab::Players;
         }
 
         let btn_tracers =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Tracers, "📡 Radar/ESP");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Tracers, "Radar/ESP");
         if btn_tracers.clicked() {
             radar.selected_tab = OverlayTab::Tracers;
         }
 
-        let btn_logs = ui.selectable_label(radar.selected_tab == OverlayTab::Logs, "📋 Console Logs");
+        let btn_rules =
+            ui.selectable_label(radar.selected_tab == OverlayTab::GameSettings, "Settings");
+        if btn_rules.clicked() {
+            radar.selected_tab = OverlayTab::GameSettings;
+        }
+
+        let btn_logs = ui.selectable_label(radar.selected_tab == OverlayTab::Logs, "Console Logs");
         if btn_logs.clicked() {
             radar.selected_tab = OverlayTab::Logs;
         }
 
         let btn_cheat =
-            ui.selectable_label(radar.selected_tab == OverlayTab::CheatSheet, "📜 Cheat Sheet");
+            ui.selectable_label(radar.selected_tab == OverlayTab::CheatSheet, "Cheat Sheet");
         if btn_cheat.clicked() {
             radar.selected_tab = OverlayTab::CheatSheet;
         }
 
         let btn_themes =
-            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "🎨 Themes & Style");
+            ui.selectable_label(radar.selected_tab == OverlayTab::Themes, "Themes & Style");
         if btn_themes.clicked() {
             radar.selected_tab = OverlayTab::Themes;
         }
@@ -365,11 +429,12 @@ fn draw_tab_bar_vertical(ui: &mut Ui, radar: &mut RadarState) {
         ui.set_min_width(115.0);
 
         let tabs = [
-            (OverlayTab::Players, "👥  Players", "View live players, roles and status"),
-            (OverlayTab::Tracers, "📡  Radar/ESP", "Live tactical radar, tracers and Skeld map"),
-            (OverlayTab::Logs, "📋  Logs", "Kill history and match logs"),
-            (OverlayTab::CheatSheet, "📜  Cheats", "Shortcuts and cheat sheet guide"),
-            (OverlayTab::Themes, "🎨  Theme", "Customize colors, layout and styles"),
+            (OverlayTab::Players, "Players", "View player info in game"),
+            (OverlayTab::Tracers, "Radar/ESP", "bro just read the title simple ahh radar"),
+            (OverlayTab::GameSettings, "Settings", "settings. What did u expect lol"),
+            (OverlayTab::Logs, "Logs", "Kill history and match logs"),
+            (OverlayTab::CheatSheet, "Cheats", "fake tasks guide"),
+            (OverlayTab::Themes, "Theme", "Customize colors, layout and styles etc."),
         ];
 
         for (tab, label, tooltip) in tabs {
@@ -453,7 +518,7 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
         };
         if ui
             .button(RichText::new(alert_text).small().color(alert_color))
-            .on_hover_text("Toggle threat danger and dead body warning banners on radar")
+            .on_hover_text("Toggle impostor warnings and dead body warning banners on radar")
             .clicked()
         {
             radar.show_warnings = !radar.show_warnings;
@@ -467,7 +532,7 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
         };
         if ui
             .button(RichText::new(map_text).small().color(map_color))
-            .on_hover_text("Toggle The Skeld tactical blueprint map background")
+            .on_hover_text("toggle skeld blackground (isn't accurate as you might think)")
             .clicked()
         {
             radar.map = match radar.map {
@@ -481,7 +546,7 @@ fn draw_tracer_controls(ui: &mut Ui, radar: &mut RadarState) {
 
         if radar.pan_offset != (0.0, 0.0) {
             if ui
-                .button(RichText::new("🎯 Center").small().color(Color32::from_rgb(100, 220, 255)))
+                .button(RichText::new("Center").small().color(Color32::from_rgb(100, 220, 255)))
                 .on_hover_text("Reset radar pan back to player center")
                 .clicked()
             {
@@ -623,7 +688,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
 
-    // Mouse drag panning
+    // pan
     if response.dragged() {
         let delta = response.drag_delta();
         radar.pan_offset.0 += delta.x;
@@ -632,7 +697,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     if response.double_clicked() {
         radar.pan_offset = (0.0, 0.0);
     }
-    // Mouse wheel zoom
+    // zoom
     if response.hovered() {
         let scroll = ui.input(|i| i.raw_scroll_delta.y);
         if scroll.abs() > 0.1 {
@@ -652,7 +717,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
 
     let (map_cx, map_cy, map_w, map_h) = match radar.map {
         RadarMap::None => (0.0, 0.0, 1.0, 1.0),
-        RadarMap::Skeld => (-1.5, -4.5, 42.0, 28.0),
+        RadarMap::Skeld => (-2.0, -7.0, 46.0, 27.0),
     };
 
     let scale_factor = if is_map_mode {
@@ -695,7 +760,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         }
     };
 
-    // Draw Radar Range Circles and Crosshairs if in relative mode and enabled
+    // range circles
     if !is_map_mode && radar.theme.show_radar_grid {
         let grid_col = Color32::from_rgba_unmultiplied(70, 110, 160, 35);
         let text_col = Color32::from_rgba_unmultiplied(120, 160, 210, 75);
@@ -724,7 +789,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         }
     }
 
-    // Draw Map Blueprint background from PNG texture if selected
+    // Draw skeld map
     draw_map_blueprint(
         ui.ctx(),
         &painter,
@@ -762,14 +827,14 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         local_color,
     );
 
-    // Check closest alive impostor for danger alert
+    // nearest alive impostor
     let closest_threat = state
         .players
         .iter()
         .filter(|p| !p.is_local && !p.is_dead && !p.disconnected && p.role.is_impostor_team() && p.distance > 0.05)
         .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Check closest dead body
+    // nearest corpse
     let closest_body = state
         .dead_bodies
         .iter()
@@ -781,11 +846,10 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         })
         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Draw Threat Alert Banners
+    // warning banners
     let mut top_offset = 6.0;
 
     if radar.show_warnings {
-        // Danger Alert Banner if impostor nearby
         if let Some(imp) = closest_threat {
             if imp.distance <= 5.5 && !local_player.map(|p| p.role.is_impostor_team()).unwrap_or(false) {
                 let alert_rect = egui::Rect::from_min_size(
@@ -813,7 +877,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             }
         }
 
-        // Dead body detected banner
         if let Some((body, b_dist)) = closest_body {
             if b_dist <= 25.0 {
                 let body_alert_rect = egui::Rect::from_min_size(
@@ -914,7 +977,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         };
         painter.circle_stroke(target_pt, 5.0, Stroke::new(1.4_f32, outline_col));
 
-        // Threat ring if impostor is within kill range (< 5.5m)
+        // kill ring if in range (< 5.5m)
         if is_imp && distance <= 5.5 {
             painter.circle_stroke(
                 target_pt,
@@ -925,20 +988,6 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
 
         let dist_str = if distance > 0.1 {
             format!(" ({:.1}m)", distance)
-        } else {
-            String::new()
-        };
-
-        let cd_str = if is_imp {
-            if let Some(cd) = player.kill_cooldown {
-                if cd <= 0.05 {
-                    " [READY]".to_string()
-                } else {
-                    format!(" [{:.0}s]", cd)
-                }
-            } else {
-                String::new()
-            }
         } else {
             String::new()
         };
@@ -954,11 +1003,11 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
             } else {
                 "Target"
             };
-            format!("{} [SS: {}]{}{}", player.name, morph_target, cd_str, dist_str)
+            format!("{} [SS: {}]{}", player.name, morph_target, dist_str)
         } else if player.in_vent {
-            format!("{} [VENT]{}{}", player.name, cd_str, dist_str)
+            format!("{} [VENT]{}", player.name, dist_str)
         } else {
-            format!("{}{}{}", player.name, cd_str, dist_str)
+            format!("{}{}", player.name, dist_str)
         };
 
         let text_color = if player.shapeshifting {
@@ -980,7 +1029,7 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
         );
     }
 
-    // Dead bodies on floor
+    // dead bodies on ground
     let should_draw_bodies = match radar.filter {
         PlayerFilter::All | PlayerFilter::DeadOnly | PlayerFilter::ImpostorsAndDead => true,
         PlayerFilter::ImpostorsOnly | PlayerFilter::CrewmatesOnly => false,
@@ -1035,7 +1084,140 @@ fn draw_tracers_canvas(ui: &mut Ui, state: &OverlayStatus, radar: &mut RadarStat
     }
 }
 
-fn draw_idle(ui: &mut Ui, state: &OverlayStatus) {
+fn draw_lobby_rules_summary(
+    ui: &mut Ui,
+    rules: &crate::game::scanner::LobbyRulesSnapshot,
+    radar: &RadarState,
+) {
+    let card_bg = Color32::from_rgba_unmultiplied(18, 22, 32, 210);
+    let border_col = Color32::from_rgba_unmultiplied(80, 95, 125, 120);
+
+    egui::Frame::none()
+        .fill(card_bg)
+        .stroke(Stroke::new(1.0_f32, border_col))
+        .rounding(6.0)
+        .inner_margin(6.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            egui::CollapsingHeader::new(
+                RichText::new("Quick Settings")
+                    .small()
+                    .strong()
+                    .color(radar.theme.accent_color32()),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("Speed: {:.2}x", rules.player_speed))
+                            .small()
+                            .color(Color32::from_rgb(100, 220, 255)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Kill Dist: {}", rules.kill_distance_str()))
+                            .small()
+                            .color(Color32::from_rgb(255, 120, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Kill CD: {:.1}s", rules.kill_cooldown))
+                            .small()
+                            .color(Color32::from_rgb(255, 180, 100)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Impostors: {}", rules.num_impostors))
+                            .small()
+                            .color(Color32::from_rgb(255, 90, 90)),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    let total_tasks = rules.num_common_tasks + rules.num_long_tasks + rules.num_short_tasks;
+                    ui.label(
+                        RichText::new(format!(
+                            "Tasks: {}C / {}L / {}S (Total {})",
+                            rules.num_common_tasks, rules.num_long_tasks, rules.num_short_tasks, total_tasks
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(120, 240, 160)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Disc/Vote: {}s / {}s",
+                            rules.discussion_time, rules.voting_time
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(220, 220, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Emergency: {} ({}s CD)",
+                            rules.num_emergency_meetings, rules.emergency_cooldown
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(255, 160, 140)),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    let vt_str = if rules.visual_tasks {
+                        "Visual: ON"
+                    } else {
+                        "Visual: OFF"
+                    };
+                    let vt_col = if rules.visual_tasks {
+                        Color32::from_rgb(80, 220, 120)
+                    } else {
+                        Color32::from_rgb(240, 100, 100)
+                    };
+                    ui.label(RichText::new(vt_str).small().color(vt_col));
+
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    let ce_str = if rules.confirm_impostor {
+                        "Confirm Ejects: ON"
+                    } else {
+                        "Confirm Ejects: OFF"
+                    };
+                    let ce_col = if rules.confirm_impostor {
+                        Color32::from_rgb(80, 220, 120)
+                    } else {
+                        Color32::from_rgb(240, 100, 100)
+                    };
+                    ui.label(RichText::new(ce_str).small().color(ce_col));
+
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    let av_str = if rules.anonymous_votes {
+                        "Anon Votes: ON"
+                    } else {
+                        "Anon Votes: OFF"
+                    };
+                    let av_col = if rules.anonymous_votes {
+                        Color32::from_rgb(240, 180, 80)
+                    } else {
+                        Color32::from_rgb(180, 190, 200)
+                    };
+                    ui.label(RichText::new(av_str).small().color(av_col));
+
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Vision: Crew {:.2}x / Imp {:.2}x",
+                            rules.crew_light, rules.impostor_light
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(180, 200, 240)),
+                    );
+                });
+            });
+        });
+}
+
+fn draw_idle(ui: &mut Ui, state: &OverlayStatus, radar: &RadarState) {
     let message = if !state.connected {
         if state.status_message.is_empty() {
             "Waiting for Among Us".to_string()
@@ -1052,6 +1234,11 @@ fn draw_idle(ui: &mut Ui, state: &OverlayStatus) {
             .italics()
             .color(Color32::from_rgb(220, 200, 100)),
     );
+
+    if let Some(rules) = &state.lobby_rules {
+        ui.add_space(8.0);
+        draw_lobby_rules_summary(ui, rules, radar);
+    }
 }
 
 fn draw_player_card(
@@ -1066,7 +1253,6 @@ fn draw_player_card(
     let is_imp = player.role.is_impostor_team();
     let role_col = radar.theme.role_color32(&player.role);
 
-    // Dynamic card border/fill styling
     let card_bg = if player.is_dead {
         Color32::from_rgba_unmultiplied(25, 25, 30, 200)
     } else if player.is_local {
@@ -1087,15 +1273,18 @@ fn draw_player_card(
         Color32::from_rgba_unmultiplied(70, 80, 100, 120)
     };
 
+    let margin = 6.0_f32;
+    let inner_w = (card_width - margin * 2.0).max(60.0);
+
     egui::Frame::none()
         .fill(card_bg)
         .stroke(Stroke::new(1.0_f32, border_col))
         .rounding(6.0)
-        .inner_margin(6.0)
+        .inner_margin(margin)
         .show(ui, |ui| {
-            ui.set_width(card_width);
+            ui.set_width(inner_w);
+            ui.set_max_width(inner_w);
 
-            // Row 1: Player color badge + Name + [YOU] / [DEAD]
             ui.horizontal(|ui| {
                 let (sq_rect, _) = ui.allocate_exact_size(Vec2::new(12.0, 12.0), Sense::hover());
                 ui.painter().rect_filled(sq_rect, 3.0, player_color);
@@ -1128,7 +1317,6 @@ fn draw_player_card(
 
             ui.add_space(2.0);
 
-            // Row 2: Role badge + Color name + Distance
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new(player.role.to_string())
@@ -1152,34 +1340,7 @@ fn draw_player_card(
 
             ui.add_space(2.0);
 
-            // Row 3: Tasks or Impostor Cooldown
-            if is_imp {
-                ui.horizontal(|ui| {
-                    if let Some(cd) = player.kill_cooldown {
-                        if cd <= 0.05 {
-                            ui.label(
-                                RichText::new("⚡ READY TO KILL")
-                                    .strong()
-                                    .small()
-                                    .color(Color32::from_rgb(255, 60, 60)),
-                            );
-                        } else {
-                            ui.label(
-                                RichText::new(format!("⏳ Kill CD: {:.1}s", cd))
-                                    .strong()
-                                    .small()
-                                    .color(Color32::from_rgb(255, 180, 60)),
-                            );
-                        }
-                    } else {
-                        ui.label(
-                            RichText::new("Impostor")
-                                .small()
-                                .color(Color32::from_rgb(255, 110, 90)),
-                        );
-                    }
-                });
-            } else if player.tasks_total > 0 {
+            if !player.role.is_impostor_team() && player.tasks_total > 0 {
                 let pct = (player.tasks_completed as f32 / player.tasks_total as f32 * 100.0).clamp(0.0, 100.0);
                 let task_col = if player.tasks_completed >= player.tasks_total {
                     Color32::from_rgb(80, 240, 140)
@@ -1195,10 +1356,9 @@ fn draw_player_card(
                 });
             }
 
-            // In Vent / Shapeshifting alerts
             if player.in_vent {
                 ui.label(
-                    RichText::new("⚠️ [INSIDE VENT]")
+                    RichText::new("[INSIDE VENT]")
                         .strong()
                         .small()
                         .color(Color32::from_rgb(255, 140, 40)),
@@ -1217,19 +1377,18 @@ fn draw_player_card(
                     "Target"
                 };
                 ui.label(
-                    RichText::new(format!("🎭 [SS: {morph_name}]"))
+                    RichText::new(format!("[SS: {morph_name}]"))
                         .strong()
                         .small()
                         .color(Color32::from_rgb(255, 90, 130)),
                 );
             }
 
-            // Meeting Vote Badge
             if state.game_state == 3 && !player.is_dead {
                 match player.voted_for {
-                    Some(target_id) if target_id == -1 => {
+                    Some(-1) => {
                         ui.label(
-                            RichText::new("🗳 [Voted: SKIP]")
+                            RichText::new("[Voted: Skip]")
                                 .strong()
                                 .small()
                                 .color(Color32::from_rgb(200, 200, 200)),
@@ -1241,28 +1400,21 @@ fn draw_player_card(
                         {
                             let (tr, tg, tb) = color_rgb(target.color_id);
                             ui.label(
-                                RichText::new(format!("🗳 [Voted: {}]", target.name))
+                                RichText::new(format!("[Voted: {}]", target.name))
                                     .strong()
                                     .small()
                                     .color(Color32::from_rgb(tr, tg, tb)),
                             );
                         } else {
                             ui.label(
-                                RichText::new(format!("🗳 [Voted: #{}]", target_id))
+                                RichText::new(format!("[Voted: #{}]", target_id))
                                     .strong()
                                     .small()
                                     .color(Color32::from_rgb(255, 180, 100)),
                             );
                         }
                     }
-                    None => {
-                        ui.label(
-                            RichText::new("🗳 [Thinking...]")
-                                .italics()
-                                .small()
-                                .color(Color32::from_rgb(130, 140, 150)),
-                        );
-                    }
+                    None => {}
                 }
             }
 
@@ -1276,11 +1428,54 @@ fn draw_player_card(
         });
 }
 
+fn draw_player_cards_grid(ui: &mut Ui, state: &OverlayStatus, radar: &RadarState) {
+    let max_h = if state.kill_events.is_empty() {
+        ui.available_height().max(200.0)
+    } else {
+        (ui.available_height() - 90.0).max(140.0)
+    };
+
+    ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .max_height(max_h)
+        .show(ui, |ui| {
+            let avail_w = (ui.available_width() - 12.0).max(100.0);
+            let num_cols = if avail_w >= 680.0 {
+                3
+            } else if avail_w >= 340.0 {
+                2
+            } else {
+                1
+            };
+
+            let gap = 6.0_f32;
+            let col_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(120.0);
+
+            ui.horizontal_top(|ui| {
+                for col_idx in 0..num_cols {
+                    ui.vertical(|ui| {
+                        ui.set_width(col_w);
+                        ui.set_max_width(col_w);
+                        for (idx, player) in state.players.iter().enumerate() {
+                            if idx % num_cols == col_idx {
+                                draw_player_card(ui, player, state, radar, col_w);
+                                ui.add_space(6.0);
+                            }
+                        }
+                    });
+                    if col_idx + 1 < num_cols {
+                        ui.add_space(gap);
+                    }
+                }
+            });
+        });
+}
+
 fn draw_player_list(
     ui: &mut Ui,
     state: &OverlayStatus,
     action: &mut OverlayAction,
-    radar: &RadarState,
+    radar: &mut RadarState,
 ) {
     let num_players = state.players.len();
     ui.horizontal(|ui| {
@@ -1310,172 +1505,327 @@ fn draw_player_list(
             }
         });
     });
-    ui.add_space(4.0);
+    ui.add_space(3.0);
 
-    // Meeting Live Votes Tracker (only during discussion / meeting)
-    if state.game_state == 3 {
-        let voters: Vec<_> = state
-            .players
-            .iter()
-            .filter(|p| !p.is_dead && !p.disconnected)
-            .collect();
-        let votes_cast = voters.iter().filter(|p| p.voted_for.is_some()).count();
-
-        egui::Frame::none()
-            .fill(Color32::from_rgba_unmultiplied(20, 35, 55, 230))
-            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(60, 150, 220)))
-            .rounding(6.0)
-            .inner_margin(8.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "🗳 Meeting Live Votes ({}/{})",
-                            votes_cast,
-                            voters.len()
-                        ))
-                        .strong()
-                        .color(Color32::from_rgb(100, 210, 255)),
-                    );
-                });
-                ui.add_space(3.0);
-
-                for voter in &voters {
-                    ui.horizontal(|ui| {
-                        let (r, g, b) = color_rgb(voter.color_id);
-                        ui.label(
-                            RichText::new(&voter.name)
-                                .color(Color32::from_rgb(r, g, b))
-                                .strong()
-                                .small(),
-                        );
-                        ui.label(
-                            RichText::new("➜")
-                                .small()
-                                .color(Color32::from_rgb(160, 160, 160)),
-                        );
-
-                        match voter.voted_for {
-                            Some(target_id) if target_id == -1 => {
-                                ui.label(
-                                    RichText::new("[SKIPPED]")
-                                        .strong()
-                                        .small()
-                                        .color(Color32::from_rgb(200, 200, 200)),
-                                );
-                            }
-                            Some(target_id) => {
-                                if let Some(target) =
-                                    state.players.iter().find(|p| p.player_id as i16 == target_id)
-                                {
-                                    let (tr, tg, tb) = color_rgb(target.color_id);
-                                    ui.label(
-                                        RichText::new(format!("[Voted: {}]", target.name))
-                                            .strong()
-                                            .small()
-                                            .color(Color32::from_rgb(tr, tg, tb)),
-                                    );
-                                } else {
-                                    ui.label(
-                                        RichText::new(format!("[Voted: #{}]", target_id))
-                                            .strong()
-                                            .small()
-                                            .color(Color32::from_rgb(255, 180, 100)),
-                                    );
-                                }
-                            }
-                            None => {
-                                ui.label(
-                                    RichText::new("Thinking...")
-                                        .italics()
-                                        .small()
-                                        .color(Color32::from_rgb(130, 140, 150)),
-                                );
-                            }
-                        }
-                    });
-                }
-            });
-        ui.add_space(6.0);
+    let mut order = radar.theme.player_blocks_order.clone();
+    for def_block in default_player_blocks() {
+        if !order.contains(&def_block) {
+            order.push(def_block);
+        }
     }
 
-    let avail_w = ui.available_width();
-    let num_cols = if avail_w >= 700.0 {
-        3
-    } else if avail_w >= 360.0 {
-        2
-    } else {
-        1
-    };
+    let mut moved_swap: Option<(usize, usize)> = None;
 
-    let max_h = if state.kill_events.is_empty() {
-        ui.available_height().max(200.0)
-    } else {
-        (ui.available_height() - 90.0).max(140.0)
-    };
+    for (idx, block) in order.iter().enumerate() {
+        if radar.is_edit_mode {
+            egui::Frame::none()
+                .fill(Color32::from_rgba_unmultiplied(30, 42, 60, 220))
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(80, 170, 255)))
+                .rounding(4.0)
+                .inner_margin(4.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("Block: {}", block.display_name()))
+                                .small()
+                                .strong()
+                                .color(Color32::from_rgb(120, 210, 255)),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if idx + 1 < order.len()
+                                && ui.button(RichText::new("Move Down").small()).clicked() {
+                                    moved_swap = Some((idx, idx + 1));
+                                }
+                            if idx > 0
+                                && ui.button(RichText::new("Move Up").small()).clicked() {
+                                    moved_swap = Some((idx, idx - 1));
+                                }
+                        });
+                    });
+                });
+            ui.add_space(2.0);
+        }
 
-    let gap = 6.0;
-    let col_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(140.0);
+        match block {
+            PlayerTabBlock::QuickSettings => {
+                if let Some(rules) = &state.lobby_rules {
+                    draw_lobby_rules_summary(ui, rules, radar);
+                    ui.add_space(4.0);
+                }
+            }
+            PlayerTabBlock::VotingMatrix => {
+                draw_voting_matrix_card(ui, state);
+            }
+            PlayerTabBlock::PlayerCards => {
+                draw_player_cards_grid(ui, state, radar);
+                ui.add_space(4.0);
+            }
+            PlayerTabBlock::KillFeed => {
+                draw_recent_kills_feed_card(ui, state, action);
+            }
+        }
+    }
 
-    ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
-        ui.horizontal_top(|ui| {
-            for col_idx in 0..num_cols {
-                ui.vertical(|ui| {
-                    ui.set_width(col_w);
-                    for (idx, player) in state.players.iter().enumerate() {
-                        if idx % num_cols == col_idx {
-                            draw_player_card(ui, player, state, radar, col_w);
-                            ui.add_space(6.0);
-                        }
+    if let Some((a, b)) = moved_swap {
+        radar.theme.player_blocks_order = order;
+        radar.theme.player_blocks_order.swap(a, b);
+        radar.theme.save();
+    }
+}
+
+fn draw_voting_matrix_card(ui: &mut Ui, state: &OverlayStatus) {
+    let has_votes = state.players.iter().any(|p| p.voted_for.is_some());
+    if !has_votes {
+        return;
+    }
+
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.label(
+            RichText::new("Meeting Voting Matrix")
+                .strong()
+                .color(Color32::from_rgb(240, 200, 80)),
+        );
+        ui.label(
+            RichText::new("Real-time live votes before meeting ends:")
+                .small()
+                .italics()
+                .color(Color32::from_rgb(160, 180, 210)),
+        );
+        ui.add_space(3.0);
+
+        let mut any_voted = false;
+        for p in &state.players {
+            if p.is_dead {
+                continue;
+            }
+            if let Some(target_id) = p.voted_for {
+                any_voted = true;
+                let (r, g, b) = color_rgb(p.color_id);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&p.name).strong().color(Color32::from_rgb(r, g, b)));
+                    ui.label(RichText::new("voted for ->").small().color(Color32::from_rgb(180, 180, 180)));
+                    if target_id == -1 {
+                        ui.label(RichText::new("Skip").strong().color(Color32::from_rgb(200, 200, 200)));
+                    } else if let Some(target) = state.players.iter().find(|t| t.player_id as i16 == target_id) {
+                        let (tr, tg, tb) = color_rgb(target.color_id);
+                        ui.label(RichText::new(&target.name).strong().color(Color32::from_rgb(tr, tg, tb)));
+                    } else {
+                        ui.label(RichText::new(format!("#{target_id}")).strong().color(Color32::from_rgb(255, 180, 100)));
                     }
                 });
-                if col_idx + 1 < num_cols {
-                    ui.add_space(gap);
+            }
+        }
+        if !any_voted {
+            ui.label(
+                RichText::new("Waiting for votes to be cast...")
+                    .small()
+                    .italics()
+                    .color(Color32::from_rgb(140, 150, 160)),
+            );
+        }
+    });
+    ui.add_space(4.0);
+}
+
+fn draw_recent_kills_feed_card(ui: &mut Ui, state: &OverlayStatus, action: &mut OverlayAction) {
+    if state.kill_events.is_empty() {
+        return;
+    }
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Recent Kills")
+                    .strong()
+                    .color(Color32::from_rgb(255, 90, 90)),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .button(
+                        RichText::new("Clear")
+                            .small()
+                            .color(Color32::from_rgb(180, 180, 180)),
+                    )
+                    .clicked()
+                {
+                    *action = OverlayAction::ClearLogs;
                 }
+            });
+        });
+        ui.add_space(2.0);
+
+        for event in state.kill_events.iter().take(4) {
+            ui.label(
+                RichText::new(&event.message)
+                    .small()
+                    .color(Color32::from_rgb(255, 130, 130)),
+            );
+        }
+    });
+    ui.add_space(4.0);
+}
+
+fn draw_recent_shapeshifts_card(ui: &mut Ui, state: &OverlayStatus) {
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Shapeshifts History")
+                    .strong()
+                    .size(13.0)
+                    .color(Color32::from_rgb(255, 120, 160)),
+            );
+            if !state.disguise_events.is_empty() {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!("({} total)", state.disguise_events.len()))
+                            .small()
+                            .color(Color32::from_rgb(170, 180, 200)),
+                    );
+                });
+            }
+        });
+        ui.add_space(4.0);
+
+        if state.disguise_events.is_empty() {
+            ui.label(
+                RichText::new("No shapeshifts detected in current match.")
+                    .italics()
+                    .color(Color32::from_rgb(160, 170, 180)),
+            );
+        } else {
+            for event in state.disguise_events.iter().take(10) {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("•")
+                            .strong()
+                            .color(Color32::from_rgb(255, 120, 160)),
+                    );
+                    ui.label(
+                        RichText::new(&event.message)
+                            .color(Color32::from_rgb(255, 190, 215)),
+                    );
+                });
+                ui.add_space(2.0);
+            }
+        }
+    });
+    ui.add_space(4.0);
+}
+
+fn draw_kill_feed_card(ui: &mut Ui, state: &OverlayStatus) {
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.label(
+            RichText::new("Kill Feed")
+                .strong()
+                .color(Color32::from_rgb(255, 100, 100)),
+        );
+        ui.add_space(2.0);
+
+        if state.kill_events.is_empty() {
+            ui.label(
+                RichText::new("No kills detected yet")
+                    .italics()
+                    .color(Color32::from_rgb(160, 170, 180)),
+            );
+        } else {
+            for event in &state.kill_events {
+                ui.label(
+                    RichText::new(&event.message)
+                        .strong()
+                        .color(Color32::from_rgb(255, 120, 120)),
+                );
+            }
+        }
+    });
+    ui.add_space(4.0);
+}
+
+fn draw_console_controls_card(
+    ui: &mut Ui,
+    state: &OverlayStatus,
+    action: &mut OverlayAction,
+    radar: &RadarState,
+) {
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.label(
+            RichText::new("Console Logging Controls")
+                .strong()
+                .color(radar.theme.accent_color32()),
+        );
+        ui.label(
+            RichText::new("Toggle real-time terminal output on and off:")
+                .small()
+                .italics()
+                .color(Color32::from_rgb(160, 180, 210)),
+        );
+        ui.add_space(4.0);
+
+        ui.horizontal_wrapped(|ui| {
+            let kill_text = if state.log_config.log_kills {
+                "Kill Logs: ON"
+            } else {
+                "Kill Logs: OFF"
+            };
+            let kill_col = if state.log_config.log_kills {
+                Color32::from_rgb(80, 220, 120)
+            } else {
+                Color32::from_rgb(180, 180, 180)
+            };
+            if ui
+                .button(RichText::new(kill_text).small().color(kill_col))
+                .clicked()
+            {
+                *action = OverlayAction::ToggleLogKills;
+            }
+
+            let state_text = if state.log_config.log_game_state {
+                "State Logs: ON"
+            } else {
+                "State Logs: OFF"
+            };
+            let state_col = if state.log_config.log_game_state {
+                Color32::from_rgb(80, 220, 120)
+            } else {
+                Color32::from_rgb(180, 180, 180)
+            };
+            if ui
+                .button(RichText::new(state_text).small().color(state_col))
+                .clicked()
+            {
+                *action = OverlayAction::ToggleLogGameState;
+            }
+
+            let roster_text = if state.log_config.log_player_list {
+                "Player Data Logs: ON"
+            } else {
+                "Player Data Logs: OFF"
+            };
+            let roster_col = if state.log_config.log_player_list {
+                Color32::from_rgb(80, 220, 120)
+            } else {
+                Color32::from_rgb(180, 180, 180)
+            };
+            if ui
+                .button(RichText::new(roster_text).small().color(roster_col))
+                .clicked()
+            {
+                *action = OverlayAction::ToggleLogPlayerList;
             }
         });
     });
-
-    if !state.kill_events.is_empty() {
-        ui.add_space(4.0);
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("Recent Kills")
-                        .strong()
-                        .color(Color32::from_rgb(255, 90, 90)),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .button(
-                            RichText::new("Clear")
-                                .small()
-                                .color(Color32::from_rgb(180, 180, 180)),
-                        )
-                        .clicked()
-                    {
-                        *action = OverlayAction::ClearLogs;
-                    }
-                });
-            });
-            ui.add_space(2.0);
-
-            for event in state.kill_events.iter().take(4) {
-                ui.label(
-                    RichText::new(&event.message)
-                        .small()
-                        .color(Color32::from_rgb(255, 130, 130)),
-                );
-            }
-        });
-    }
+    ui.add_space(4.0);
 }
 
 fn draw_event_logs(
     ui: &mut Ui,
     state: &OverlayStatus,
     action: &mut OverlayAction,
-    radar: &RadarState,
+    radar: &mut RadarState,
 ) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Console Logs").strong().size(13.0));
@@ -1505,186 +1855,424 @@ fn draw_event_logs(
     });
     ui.add_space(4.0);
 
+    let mut order = radar.theme.logs_blocks_order.clone();
+    for def_block in default_logs_blocks() {
+        if !order.contains(&def_block) {
+            order.push(def_block);
+        }
+    }
+
+    let mut moved_swap: Option<(usize, usize)> = None;
+
+    let max_h = ui.available_height().max(180.0);
+    ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
+        for (idx, block) in order.iter().enumerate() {
+            if radar.is_edit_mode {
+                egui::Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(30, 42, 60, 220))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(80, 170, 255)))
+                    .rounding(4.0)
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("Block: {}", block.display_name()))
+                                    .small()
+                                    .strong()
+                                    .color(Color32::from_rgb(120, 210, 255)),
+                            );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if idx + 1 < order.len()
+                                    && ui.button(RichText::new("Move Down").small()).clicked() {
+                                        moved_swap = Some((idx, idx + 1));
+                                    }
+                                if idx > 0
+                                    && ui.button(RichText::new("Move Up").small()).clicked() {
+                                        moved_swap = Some((idx, idx - 1));
+                                    }
+                            });
+                        });
+                    });
+                ui.add_space(2.0);
+            }
+
+            match block {
+                LogsTabBlock::VotingMatrix => {
+                    draw_voting_matrix_card(ui, state);
+                }
+                LogsTabBlock::ConsoleControls => {
+                    draw_console_controls_card(ui, state, action, radar);
+                }
+                LogsTabBlock::KillFeed => {
+                    draw_kill_feed_card(ui, state);
+                }
+                LogsTabBlock::Shapeshifts => {
+                    draw_recent_shapeshifts_card(ui, state);
+                }
+            }
+        }
+    });
+
+    if let Some((a, b)) = moved_swap {
+        radar.theme.logs_blocks_order = order;
+        radar.theme.logs_blocks_order.swap(a, b);
+        radar.theme.save();
+    }
+}
+
+fn draw_game_settings_tab(
+    ui: &mut Ui,
+    state: &OverlayStatus,
+    radar: &RadarState,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Game Settings")
+                .strong()
+                .size(13.0)
+                .color(radar.theme.accent_color32()),
+        );
+        if let Some(rules) = &state.lobby_rules {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "Map: {} | Max: {}",
+                        rules.map_name(),
+                        rules.max_players
+                    ))
+                    .small()
+                    .color(Color32::from_rgb(180, 200, 230)),
+                );
+            });
+        }
+    });
+    ui.add_space(4.0);
+
     let max_h = ui.available_height().max(200.0);
     ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
-        // Meeting Voting Matrix
-        let has_votes =
-            state.players.iter().any(|p| p.voted_for.is_some()) || state.game_state == 3;
-        if has_votes {
+        if let Some(rules) = &state.lobby_rules {
             ui.group(|ui| {
+                ui.set_width(ui.available_width());
                 ui.label(
-                    RichText::new("Meeting Voting Matrix")
+                    RichText::new("General & Movement")
+                        .strong()
+                        .color(radar.theme.accent_color32()),
+                );
+                ui.add_space(2.0);
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("Player Speed: {:.2}x", rules.player_speed))
+                            .small()
+                            .color(Color32::from_rgb(100, 220, 255)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Crew Vision: {:.2}x", rules.crew_light))
+                            .small()
+                            .color(Color32::from_rgb(180, 220, 255)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Impostor Vision: {:.2}x", rules.impostor_light))
+                            .small()
+                            .color(Color32::from_rgb(255, 140, 140)),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("Kill Distance: {}", rules.kill_distance_str()))
+                            .small()
+                            .color(Color32::from_rgb(255, 120, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Kill Cooldown: {:.1}s", rules.kill_cooldown))
+                            .small()
+                            .color(Color32::from_rgb(255, 180, 100)),
+                    );
+                });
+            });
+
+            ui.add_space(6.0);
+
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new("Meetings & Voting")
                         .strong()
                         .color(Color32::from_rgb(240, 200, 80)),
                 );
-                ui.label(
-                    RichText::new("Real-time live votes before meeting ends:")
+                ui.add_space(2.0);
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("Discussion Time: {}s", rules.discussion_time))
+                            .small()
+                            .color(Color32::from_rgb(240, 220, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Voting Time: {}s", rules.voting_time))
+                            .small()
+                            .color(Color32::from_rgb(240, 220, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Emergency Meetings: {}",
+                            rules.num_emergency_meetings
+                        ))
                         .small()
-                        .italics()
-                        .color(Color32::from_rgb(160, 180, 210)),
+                        .color(Color32::from_rgb(255, 140, 120)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Emergency CD: {}s",
+                            rules.emergency_cooldown
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(255, 160, 140)),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    let ce_col = if rules.confirm_impostor {
+                        Color32::from_rgb(80, 220, 120)
+                    } else {
+                        Color32::from_rgb(240, 100, 100)
+                    };
+                    ui.label(
+                        RichText::new(format!(
+                            "Confirm Ejects: {}",
+                            if rules.confirm_impostor { "ON" } else { "OFF" }
+                        ))
+                        .small()
+                        .color(ce_col),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    let av_col = if rules.anonymous_votes {
+                        Color32::from_rgb(240, 180, 80)
+                    } else {
+                        Color32::from_rgb(180, 190, 200)
+                    };
+                    ui.label(
+                        RichText::new(format!(
+                            "Anonymous Votes: {}",
+                            if rules.anonymous_votes { "ON" } else { "OFF" }
+                        ))
+                        .small()
+                        .color(av_col),
+                    );
+                });
+            });
+
+            ui.add_space(6.0);
+
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new("Tasks Configuration")
+                        .strong()
+                        .color(Color32::from_rgb(100, 220, 150)),
                 );
+                ui.add_space(2.0);
+
+                let total_tasks =
+                    rules.num_common_tasks + rules.num_long_tasks + rules.num_short_tasks;
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("Common: {}", rules.num_common_tasks))
+                            .small()
+                            .color(Color32::from_rgb(140, 230, 180)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Long: {}", rules.num_long_tasks))
+                            .small()
+                            .color(Color32::from_rgb(140, 230, 180)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Short: {}", rules.num_short_tasks))
+                            .small()
+                            .color(Color32::from_rgb(140, 230, 180)),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!("Total: {}", total_tasks))
+                            .small()
+                            .strong()
+                            .color(Color32::from_rgb(180, 255, 200)),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    let vt_col = if rules.visual_tasks {
+                        Color32::from_rgb(80, 220, 120)
+                    } else {
+                        Color32::from_rgb(240, 100, 100)
+                    };
+                    ui.label(
+                        RichText::new(format!(
+                            "Visual Tasks: {}",
+                            if rules.visual_tasks { "ON" } else { "OFF" }
+                        ))
+                        .small()
+                        .color(vt_col),
+                    );
+                    ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+                    ui.label(
+                        RichText::new(format!(
+                            "Task Bar Updates: {}",
+                            rules.task_bar_mode_str()
+                        ))
+                        .small()
+                        .color(Color32::from_rgb(140, 200, 250)),
+                    );
+                });
+            });
+
+            ui.add_space(6.0);
+
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "Role Chances & Settings ({})",
+                            rules.role_settings.len()
+                        ))
+                        .strong()
+                        .color(Color32::from_rgb(255, 130, 180)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("Impostors: {}", rules.num_impostors))
+                                .small()
+                                .color(Color32::from_rgb(255, 90, 90)),
+                        );
+                    });
+                });
                 ui.add_space(3.0);
 
-                for p in &state.players {
-                    if p.is_dead {
-                        continue;
-                    }
-                    let vote_text = match p.voted_for {
-                        Some(-1) => RichText::new("SKIPPED VOTE")
+                if rules.role_settings.is_empty() {
+                    ui.label(
+                        RichText::new("Standard roles active (no special role modifiers configured)")
                             .italics()
-                            .color(Color32::from_rgb(200, 200, 120)),
-                        Some(target_id) => {
-                            let target_name = state
-                                .players
-                                .iter()
-                                .find(|t| t.player_id == target_id as u8)
-                                .map(|t| t.name.as_str())
-                                .unwrap_or("Unknown");
-                            RichText::new(format!("Voted for ➜ {target_name}"))
-                                .strong()
-                                .color(Color32::from_rgb(255, 100, 100))
-                        }
-                        None => RichText::new("Thinking... (Not voted yet)")
                             .small()
-                            .color(Color32::from_rgb(140, 150, 160)),
-                    };
+                            .color(Color32::from_rgb(160, 170, 180)),
+                    );
+                } else {
+                    let mut crew_roles = Vec::new();
+                    let mut imp_roles = Vec::new();
+                    for r in &rules.role_settings {
+                        if r.is_impostor_role {
+                            imp_roles.push(r);
+                        } else {
+                            crew_roles.push(r);
+                        }
+                    }
 
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&p.name).strong().color(Color32::WHITE));
-                        ui.label(":");
-                        ui.label(vote_text);
-                    });
+                    if !crew_roles.is_empty() {
+                        ui.label(
+                            RichText::new("Crewmate Roles")
+                                .strong()
+                                .small()
+                                .color(Color32::from_rgb(100, 200, 255)),
+                        );
+                        ui.add_space(2.0);
+                        for role in &crew_roles {
+                            draw_role_setting_chip(ui, role);
+                        }
+                    }
+
+                    if !imp_roles.is_empty() {
+                        if !crew_roles.is_empty() {
+                            ui.add_space(4.0);
+                        }
+                        ui.label(
+                            RichText::new("Impostor Roles")
+                                .strong()
+                                .small()
+                                .color(Color32::from_rgb(255, 110, 110)),
+                        );
+                        ui.add_space(2.0);
+                        for role in &imp_roles {
+                            draw_role_setting_chip(ui, role);
+                        }
+                    }
                 }
             });
-            ui.add_space(6.0);
-        }
-
-        // Console Logging Toggles
-        ui.group(|ui| {
-            ui.label(
-                RichText::new("Console Logging Controls")
-                    .strong()
-                    .color(radar.theme.accent_color32()),
-            );
-            ui.label(
-                RichText::new("Toggle real-time terminal output on and off:")
+        } else {
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new("Waiting for active match / lobby rules...")
+                        .italics()
+                        .color(Color32::from_rgb(220, 200, 100)),
+                );
+                ui.label(
+                    RichText::new(
+                        "Host settings and role options will automatically appear here once you enter a lobby or match.",
+                    )
                     .small()
-                    .italics()
-                    .color(Color32::from_rgb(160, 180, 210)),
-            );
-            ui.add_space(4.0);
-
-            ui.horizontal_wrapped(|ui| {
-                let kill_text = if state.log_config.log_kills {
-                    "Kill Logs: ON"
-                } else {
-                    "Kill Logs: OFF"
-                };
-                let kill_col = if state.log_config.log_kills {
-                    Color32::from_rgb(80, 220, 120)
-                } else {
-                    Color32::from_rgb(180, 180, 180)
-                };
-                if ui
-                    .button(RichText::new(kill_text).small().color(kill_col))
-                    .clicked()
-                {
-                    *action = OverlayAction::ToggleLogKills;
-                }
-
-                let state_text = if state.log_config.log_game_state {
-                    "State Logs: ON"
-                } else {
-                    "State Logs: OFF"
-                };
-                let state_col = if state.log_config.log_game_state {
-                    Color32::from_rgb(80, 220, 120)
-                } else {
-                    Color32::from_rgb(180, 180, 180)
-                };
-                if ui
-                    .button(RichText::new(state_text).small().color(state_col))
-                    .clicked()
-                {
-                    *action = OverlayAction::ToggleLogGameState;
-                }
-
-                let roster_text = if state.log_config.log_player_list {
-                    "Player Roster Logs: ON"
-                } else {
-                    "Player Roster Logs: OFF"
-                };
-                let roster_col = if state.log_config.log_player_list {
-                    Color32::from_rgb(80, 220, 120)
-                } else {
-                    Color32::from_rgb(180, 180, 180)
-                };
-                if ui
-                    .button(RichText::new(roster_text).small().color(roster_col))
-                    .clicked()
-                {
-                    *action = OverlayAction::ToggleLogPlayerList;
-                }
+                    .color(Color32::from_rgb(160, 170, 190)),
+                );
             });
-        });
-
-        ui.add_space(6.0);
-
-        // Shapeshifter Disguises Feed
-        ui.group(|ui| {
-            ui.label(
-                RichText::new("Shapeshifts")
-                    .strong()
-                    .color(Color32::from_rgb(255, 120, 160)),
-            );
-            ui.add_space(2.0);
-
-            if state.disguise_events.is_empty() {
-                ui.label(
-                    RichText::new("No shapeshifts detected yet")
-                        .italics()
-                        .color(Color32::from_rgb(160, 170, 180)),
-                );
-            } else {
-                for event in &state.disguise_events {
-                    ui.label(
-                        RichText::new(&event.message)
-                            .strong()
-                            .color(Color32::from_rgb(255, 140, 180)),
-                    );
-                }
-            }
-        });
-
-        ui.add_space(6.0);
-
-
-        // Kill & Death Event Feed
-        ui.group(|ui| {
-            ui.label(
-                RichText::new("Kill Feed")
-                    .strong()
-                    .color(Color32::from_rgb(255, 100, 100)),
-            );
-            ui.add_space(2.0);
-
-            if state.kill_events.is_empty() {
-                ui.label(
-                    RichText::new("No kills detected yet")
-                        .italics()
-                        .color(Color32::from_rgb(160, 170, 180)),
-                );
-            } else {
-                for event in &state.kill_events {
-                    ui.label(
-                        RichText::new(&event.message)
-                            .strong()
-                            .color(Color32::from_rgb(255, 120, 120)),
-                    );
-                }
-            }
-        });
+        }
     });
+}
+
+fn draw_role_setting_chip(ui: &mut Ui, role: &crate::game::scanner::RoleSettingEntry) {
+    let header_col = if role.is_impostor_role {
+        Color32::from_rgb(255, 110, 110)
+    } else {
+        Color32::from_rgb(110, 210, 255)
+    };
+    let chance_col = if role.chance == 100 {
+        Color32::from_rgb(80, 230, 120)
+    } else if role.chance > 0 {
+        Color32::from_rgb(240, 200, 80)
+    } else {
+        Color32::from_rgb(160, 160, 160)
+    };
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            RichText::new(&role.role_name)
+                .strong()
+                .small()
+                .color(header_col),
+        );
+        ui.label(
+            RichText::new(format!("Count: {}", role.count))
+                .small()
+                .color(Color32::from_rgb(200, 210, 230)),
+        );
+        ui.label(RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)));
+        ui.label(
+            RichText::new(format!("Chance: {}%", role.chance))
+                .small()
+                .strong()
+                .color(chance_col),
+        );
+
+        if !role.details.is_empty() {
+            ui.label(
+                RichText::new("•").small().color(Color32::from_rgb(100, 110, 130)),
+            );
+            ui.label(
+                RichText::new(role.details.join(" | "))
+                    .small()
+                    .color(Color32::from_rgb(170, 180, 200)),
+            );
+        }
+    });
+    ui.add_space(2.0);
 }
 
 fn draw_cheat_sheet(ui: &mut Ui) {
@@ -1694,6 +2282,7 @@ fn draw_cheat_sheet(ui: &mut Ui) {
     let max_h = ui.available_height().max(200.0);
     ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("Instant / Very Short Tasks (1 to 3 seconds)")
                     .strong()
@@ -1714,6 +2303,7 @@ fn draw_cheat_sheet(ui: &mut Ui) {
         ui.add_space(6.0);
 
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("Standard / Medium Tasks (4 to 8 seconds)")
                     .strong()
@@ -1730,6 +2320,7 @@ fn draw_cheat_sheet(ui: &mut Ui) {
         ui.add_space(6.0);
 
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("Longer Tasks (9 to 20+ seconds)")
                     .strong()
@@ -1785,13 +2376,119 @@ fn draw_task_item(ui: &mut Ui, name: &str, timing: &str, note: Option<&str>) {
 }
 
 fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Theme & Layout Settings")
+                .strong()
+                .size(13.0),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button(
+                    RichText::new("Reset Layout Order")
+                        .small()
+                        .color(Color32::from_rgb(140, 200, 255)),
+                )
+                .on_hover_text("Restore default block sequence")
+                .clicked()
+            {
+                radar.confirm_reset_layout = !radar.confirm_reset_layout;
+                radar.confirm_reset_theme = false;
+            }
+            if ui
+                .button(
+                    RichText::new("Reset Default Theme")
+                        .small()
+                        .color(Color32::from_rgb(255, 180, 100)),
+                )
+                .on_hover_text("Restore default theme colors")
+                .clicked()
+            {
+                radar.confirm_reset_theme = !radar.confirm_reset_theme;
+                radar.confirm_reset_layout = false;
+            }
+        });
+    });
+
+    if radar.confirm_reset_theme {
+        ui.add_space(2.0);
+        egui::Frame::none()
+            .fill(Color32::from_rgba_unmultiplied(60, 20, 20, 240))
+            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(255, 100, 100)))
+            .rounding(radar.theme.corner_rounding)
+            .inner_margin(6.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Are you sure you want to reset default theme?")
+                            .small()
+                            .strong()
+                            .color(Color32::from_rgb(255, 200, 200)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("Cancel").small()).clicked() {
+                            radar.confirm_reset_theme = false;
+                        }
+                        if ui
+                            .button(
+                                RichText::new("Yes, Reset")
+                                    .small()
+                                    .strong()
+                                    .color(Color32::from_rgb(255, 255, 255)),
+                            )
+                            .clicked()
+                        {
+                            radar.theme = ThemeConfig::default();
+                            radar.theme.save();
+                            radar.confirm_reset_theme = false;
+                        }
+                    });
+                });
+            });
+    }
+
+    if radar.confirm_reset_layout {
+        ui.add_space(2.0);
+        egui::Frame::none()
+            .fill(Color32::from_rgba_unmultiplied(20, 40, 60, 240))
+            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(100, 180, 255)))
+            .rounding(radar.theme.corner_rounding)
+            .inner_margin(6.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Are you sure you want to reset layout order?")
+                            .small()
+                            .strong()
+                            .color(Color32::from_rgb(200, 230, 255)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("Cancel").small()).clicked() {
+                            radar.confirm_reset_layout = false;
+                        }
+                        if ui
+                            .button(
+                                RichText::new("Yes, Reset")
+                                    .small()
+                                    .strong()
+                                    .color(Color32::from_rgb(255, 255, 255)),
+                            )
+                            .clicked()
+                        {
+                            radar.theme.player_blocks_order = default_player_blocks();
+                            radar.theme.logs_blocks_order = default_logs_blocks();
+                            radar.theme.save();
+                            radar.confirm_reset_layout = false;
+                        }
+                    });
+                });
+            });
+    }
+
     ui.label(
-        RichText::new("Theme & Color Customization")
-            .strong()
-            .size(13.0),
-    );
-    ui.label(
-        RichText::new("Changes are automatically saved to theme.toml")
+        RichText::new("Auto-saved to theme.toml")
             .small()
             .italics()
             .color(Color32::from_rgb(150, 170, 200)),
@@ -1801,8 +2498,9 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
     let max_h = ui.available_height().max(200.0);
     ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
-                RichText::new("GUI Layout & Style")
+                RichText::new("GUI Style")
                     .strong()
                     .color(radar.theme.accent_color32()),
             );
@@ -1872,7 +2570,7 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
                 if ui
                     .checkbox(
                         &mut radar.theme.show_radar_grid,
-                        "Show Radar Range Circles & Crosshairs",
+                        "Show Radar Circles & Grid",
                     )
                     .changed()
                 {
@@ -1888,6 +2586,88 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
         ui.add_space(6.0);
 
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("Block Layout Order")
+                        .strong()
+                        .color(radar.theme.accent_color32()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let edit_mode_txt = if radar.is_edit_mode {
+                        "[Exit Edit Mode]"
+                    } else {
+                        "[Enter Edit Mode]"
+                    };
+                    let edit_mode_col = if radar.is_edit_mode {
+                        Color32::from_rgb(255, 200, 60)
+                    } else {
+                        Color32::from_rgb(100, 200, 255)
+                    };
+                    if ui.button(RichText::new(edit_mode_txt).small().strong().color(edit_mode_col)).clicked() {
+                        radar.is_edit_mode = !radar.is_edit_mode;
+                    }
+                });
+            });
+            ui.add_space(2.0);
+
+            // reorder player tab blocks
+            ui.label(RichText::new("Players Tab Blocks:").strong().size(11.0));
+            let mut player_swap: Option<(usize, usize)> = None;
+            let p_len = radar.theme.player_blocks_order.len();
+            for i in 0..p_len {
+                let name = radar.theme.player_blocks_order[i].display_name();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{}. {}", i + 1, name)).small());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if i + 1 < p_len
+                            && ui.button(RichText::new("Down").small()).clicked() {
+                                player_swap = Some((i, i + 1));
+                            }
+                        if i > 0
+                            && ui.button(RichText::new("Up").small()).clicked() {
+                                player_swap = Some((i, i - 1));
+                            }
+                    });
+                });
+            }
+            if let Some((a, b)) = player_swap {
+                radar.theme.player_blocks_order.swap(a, b);
+                radar.theme.save();
+            }
+
+            ui.add_space(4.0);
+
+            // reorder logs tab blocks
+            ui.label(RichText::new("Logs Tab Blocks:").strong().size(11.0));
+            let mut logs_swap: Option<(usize, usize)> = None;
+            let l_len = radar.theme.logs_blocks_order.len();
+            for i in 0..l_len {
+                let name = radar.theme.logs_blocks_order[i].display_name();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{}. {}", i + 1, name)).small());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if i + 1 < l_len
+                            && ui.button(RichText::new("Down").small()).clicked() {
+                                logs_swap = Some((i, i + 1));
+                            }
+                        if i > 0
+                            && ui.button(RichText::new("Up").small()).clicked() {
+                                logs_swap = Some((i, i - 1));
+                            }
+                    });
+                });
+            }
+            if let Some((a, b)) = logs_swap {
+                radar.theme.logs_blocks_order.swap(a, b);
+                radar.theme.save();
+            }
+        });
+
+        ui.add_space(6.0);
+
+        ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("Color Presets")
                     .strong()
@@ -1917,6 +2697,7 @@ fn draw_theme_settings(ui: &mut Ui, radar: &mut RadarState) {
         ui.add_space(6.0);
 
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("All Role Colors")
                     .strong()
@@ -2060,13 +2841,19 @@ fn draw_compact_color_edit(ui: &mut Ui, label: &str, rgba: &mut [u8; 4]) -> bool
     ui.horizontal(|ui| {
         ui.add_space(18.0);
 
-        let mut hex = format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2]);
+        let id = ui.make_persistent_id(label);
+        let mut hex = ui.data_mut(|d| {
+            d.get_temp::<String>(id)
+                .unwrap_or_else(|| format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2]))
+        });
+
         let hex_resp = ui.add(
             egui::TextEdit::singleline(&mut hex)
-                .desired_width(62.0)
+                .desired_width(70.0)
                 .hint_text("#RRGGBB"),
         );
-        if hex_resp.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+
+        if hex_resp.changed() || hex_resp.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             let clean = hex.trim().trim_start_matches('#');
             if clean.len() == 6 {
                 if let Ok(val) = u32::from_str_radix(clean, 16) {
@@ -2075,7 +2862,23 @@ fn draw_compact_color_edit(ui: &mut Ui, label: &str, rgba: &mut [u8; 4]) -> bool
                     rgba[2] = (val & 0xFF) as u8;
                     changed = true;
                 }
+            } else if clean.len() == 8 {
+                if let Ok(val) = u32::from_str_radix(clean, 16) {
+                    rgba[0] = ((val >> 24) & 0xFF) as u8;
+                    rgba[1] = ((val >> 16) & 0xFF) as u8;
+                    rgba[2] = ((val >> 8) & 0xFF) as u8;
+                    rgba[3] = (val & 0xFF) as u8;
+                    changed = true;
+                }
             }
+        }
+
+        if hex_resp.has_focus() {
+            ui.data_mut(|d| d.insert_temp(id, hex));
+        } else {
+            ui.data_mut(|d| {
+                d.insert_temp(id, format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2]))
+            });
         }
 
         ui.add_space(2.0);
@@ -2148,7 +2951,7 @@ fn draw_resize_handle(ui: &mut Ui, action: &mut OverlayAction) {
         *action = OverlayAction::ResizeWindow;
     }
 
-    // Draw subtle 3-line diagonal grip icon
+    // diagonal grip lines
     let p = ui.painter();
     let col = Color32::from_rgba_unmultiplied(200, 210, 230, 90);
     for i in 0..3 {

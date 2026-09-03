@@ -38,12 +38,10 @@ pub fn read_mono_string(
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect::<Vec<_>>();
 
-    // Reject unprintable control characters (< 0x20, except common whitespace) and
-    // invalid UTF-16 lone surrogates (0xD800..=0xDFFF). Everything else — including
-    // CJK, diacritics, emoji surrogates, etc. — is allowed.
+    // filter out control chars & invalid surrogates
     if units
         .iter()
-        .any(|&u| (u < 0x0020) || (u >= 0xD800 && u <= 0xDFFF) || u == 0xFFFE || u == 0xFFFF)
+        .any(|&u| (u < 0x0020) || (0xD800..=0xDFFF).contains(&u) || u == 0xFFFE || u == 0xFFFF)
     {
         return Err(MemoryError::InvalidString);
     }

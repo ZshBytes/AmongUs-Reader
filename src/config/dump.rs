@@ -24,7 +24,7 @@ struct ScriptEntry {
     address: Value,
 }
 
-const TYPEINFO_TARGETS: [(&str, fn(&mut StaticPointers, u64)); 4] = [
+const TYPEINFO_TARGETS: [(&str, fn(&mut StaticPointers, u64)); 7] = [
     ("PlayerControl_TypeInfo", |p, v| {
         p.player_control_type_info = v
     }),
@@ -35,9 +35,18 @@ const TYPEINFO_TARGETS: [(&str, fn(&mut StaticPointers, u64)); 4] = [
     ("GameOptionsManager_TypeInfo", |p, v| {
         p.game_options_manager_type_info = v
     }),
+    ("MeetingHud_TypeInfo", |p, v| {
+        p.meeting_hud_type_info = v
+    }),
+    ("GameCode_TypeInfo", |p, v| {
+        p.game_code_type_info = v
+    }),
+    ("InnerNet.GameCode_TypeInfo", |p, v| {
+        p.game_code_type_info = v
+    }),
 ];
 
-const STATIC_FIELD_TARGETS: [(&str, &str, fn(&mut StaticFields, u64)); 4] = [
+const STATIC_FIELD_TARGETS: [(&str, &str, fn(&mut StaticFields, u64)); 6] = [
     ("PlayerControl_StaticFields", "AllPlayerControls", |s, v| {
         s.player_control_all_player_controls = v
     }),
@@ -49,6 +58,12 @@ const STATIC_FIELD_TARGETS: [(&str, &str, fn(&mut StaticFields, u64)); 4] = [
     }),
     ("GameOptionsManager_StaticFields", "Instance", |s, v| {
         s.game_options_manager_instance = v
+    }),
+    ("MeetingHud_StaticFields", "Instance", |s, v| {
+        s.meeting_hud_instance = v
+    }),
+    ("GameCode_StaticFields", "V2", |s, v| {
+        s.game_code_v2 = v
     }),
 ];
 
@@ -192,12 +207,9 @@ fn apply_il2cpp_h(fields: &mut StaticFields, path: &str) -> Result<Vec<String>, 
     let mut notes = Vec::new();
 
     for (struct_name, field_name, setter) in STATIC_FIELD_TARGETS {
-        match parse_struct_field_offset(&text, struct_name, field_name) {
-            Some(offset) => {
-                setter(fields, offset);
-                notes.push(format!("loaded {struct_name}.{field_name} = 0x{offset:X}"));
-            }
-            None => {}
+        if let Some(offset) = parse_struct_field_offset(&text, struct_name, field_name) {
+            setter(fields, offset);
+            notes.push(format!("loaded {struct_name}.{field_name} = 0x{offset:X}"));
         }
     }
     Ok(notes)
@@ -381,14 +393,13 @@ fn parse_dump_field(source: &str, class_name: &str, field_signature: &str) -> Op
                         found_opening_brace = true;
                         line_depth += 1;
                     }
-                    '}' => {
-                        if depth > 0 {
+                    '}'
+                        if depth > 0 => {
                             depth -= 1;
                             if depth == 0 {
                                 return None;
                             }
                         }
-                    }
                     _ => {}
                 }
             }
@@ -492,6 +503,8 @@ mod tests {
             among_us_client_type_info: 0,
             game_data_type_info: 0,
             game_options_manager_type_info: 0,
+            meeting_hud_type_info: 0,
+            game_code_type_info: 0,
         };
         let text = r#"[
             {"Name": "PlayerControl_TypeInfo", "Address": "0x1234"},
@@ -520,6 +533,8 @@ mod tests {
             among_us_client_type_info: 0,
             game_data_type_info: 0,
             game_options_manager_type_info: 0,
+            meeting_hud_type_info: 0,
+            game_code_type_info: 0,
         };
         let text = r#"{
             "PlayerControl_TypeInfo": "0x1234",
@@ -562,6 +577,8 @@ public class GameData {
             among_us_client_instance: 0,
             game_data_instance: 0,
             game_options_manager_instance: 0,
+            meeting_hud_instance: 0,
+            game_code_v2: 0,
         };
         let notes =
             apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap()).unwrap();
@@ -640,6 +657,8 @@ public class AmongUsClient : InnerNetClient {
             among_us_client_instance: 0,
             game_data_instance: 0,
             game_options_manager_instance: 0,
+            meeting_hud_instance: 0,
+            game_code_v2: 0,
         };
         let notes =
             apply_static_field_offsets_from_dump_cs(&mut fields, path.to_str().unwrap()).unwrap();

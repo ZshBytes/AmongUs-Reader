@@ -101,7 +101,7 @@ impl OverlayHandler {
     }
 
     fn save_key_setting(key: &str) {
-        // Try updating offsets.toml if it exists
+        // update toggle key in config
         if let Ok(content) = std::fs::read_to_string("offsets.toml") {
             let lines: Vec<String> = content
                 .lines()
@@ -195,8 +195,11 @@ impl OverlayHandler {
         }
 
         let painter = Painter::new(gl.clone(), "", None, true).expect("painter");
+        let egui_ctx = egui::Context::default();
+        setup_custom_fonts(&egui_ctx);
+
         let egui_winit = EguiWinitState::new(
-            egui::Context::default(),
+            egui_ctx,
             egui::ViewportId::ROOT,
             &window,
             Some(window.scale_factor() as f32),
@@ -364,4 +367,57 @@ impl ApplicationHandler for OverlayHandler {
             self.last_frame = Instant::now();
         }
     }
+}
+
+fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // pick first available cjk font
+    let cjk_fonts = [
+        ("cjk", "C:\\Windows\\Fonts\\meiryo.ttc"),
+        ("cjk", "C:\\Windows\\Fonts\\YuGothM.ttc"),
+        ("cjk", "C:\\Windows\\Fonts\\msgothic.ttc"),
+        ("cjk", "C:\\Windows\\Fonts\\simsun.ttc"),
+        ("cjk", "C:\\Windows\\Fonts\\malgun.ttf"),
+    ];
+
+    for (name, path) in cjk_fonts {
+        if let Ok(data) = std::fs::read(path) {
+            fonts.font_data.insert(
+                name.to_string(),
+                std::sync::Arc::new(egui::FontData::from_owned(data)),
+            );
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                family.push(name.to_string());
+            }
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                family.push(name.to_string());
+            }
+            break;
+        }
+    }
+
+    // emoji fallback font
+    let emoji_fonts = [
+        ("emoji", "C:\\Windows\\Fonts\\seguiemj.ttf"),
+        ("emoji", "C:\\Windows\\Fonts\\seguisym.ttf"),
+    ];
+
+    for (name, path) in emoji_fonts {
+        if let Ok(data) = std::fs::read(path) {
+            fonts.font_data.insert(
+                name.to_string(),
+                std::sync::Arc::new(egui::FontData::from_owned(data)),
+            );
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                family.push(name.to_string());
+            }
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                family.push(name.to_string());
+            }
+            break;
+        }
+    }
+
+    ctx.set_fonts(fonts);
 }

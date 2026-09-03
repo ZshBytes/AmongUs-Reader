@@ -48,14 +48,11 @@ impl<'a> PlayerValidator<'a> {
         cnt: &CustomNetworkTransformFields,
         string_layout: &MonoStringLayout,
     ) -> Result<PlayerSnapshot, MemoryError> {
-        if data_ptr == 0 || data_ptr % 4 != 0 || !self.reader.process().is_valid_pointer(data_ptr) {
+        if data_ptr == 0 || !data_ptr.is_multiple_of(4) || !self.reader.process().is_valid_pointer(data_ptr) {
             return Err(MemoryError::InvalidPointer(data_ptr));
         }
 
-        let klass_ptr = match self.reader.read_pointer(data_ptr) {
-            Ok(k) => k,
-            Err(e) => return Err(e),
-        };
+        let klass_ptr = self.reader.read_pointer(data_ptr)?;
         if !self.reader.process().is_valid_pointer(klass_ptr) {
             return Err(MemoryError::ReadFailed {
                 address: data_ptr,
@@ -63,9 +60,7 @@ impl<'a> PlayerValidator<'a> {
             });
         }
 
-        // Validate player_id (0..15).
-        // On 32-bit IL2CPP v18, PlayerId (byte) sits around 0x1C–0x28.
-        // On 32-bit IL2CPP, NetworkedPlayerInfo.PlayerId sits at 0x28.
+        // player_id (0..15) at 0x28 on x86
         let mut player_id = 255u8;
         for id_off in [0x28_u64, 0x24, 0x2C, 0x20] {
             if let Ok(b) = self.reader.read_u8(data_ptr + id_off) {
@@ -79,7 +74,7 @@ impl<'a> PlayerValidator<'a> {
             return Err(MemoryError::InvalidPointer(data_ptr));
         }
 
-        // Disconnected must be a boolean byte (0 or 1).
+        // disconnected flag
         let disconnected_byte = self
             .reader
             .read_u8(data_ptr + info.disconnected)
@@ -89,25 +84,25 @@ impl<'a> PlayerValidator<'a> {
         }
         let disconnected = disconnected_byte == 1;
 
-        // is_dead: strictly check NetworkedPlayerInfo.IsDead at 0x54.
+        // is_dead flag
         let is_dead = self
             .reader
             .read_u8(data_ptr + info.is_dead)
             .map(|b| b == 1)
             .unwrap_or(false);
 
-        // was_ejected: check NetworkedPlayerInfo.WasEjected at 0x55.
+        // was_ejected flag
         let was_ejected = self
             .reader
             .read_u8(data_ptr + 0x55)
             .map(|b| b == 1)
             .unwrap_or(false);
 
-        // RoleType: read from RoleBehaviour (+0x4C -> +0x10) or NetworkedPlayerInfo.RoleType (+0x38).
+        // role from RoleBehaviour or PlayerInfo
         let role_raw = self.resolve_role(data_ptr, player_control_ptr, info.role_type);
         let role = RoleType::from_id(role_raw, &self.valid_roles).unwrap_or(RoleType::Crewmate);
 
-        // Name + color resolution.
+        // player name & color
         let is_valid_player_name = |n: &str| -> bool {
             if n.is_empty() || n.len() > self.validation.max_player_name_len {
                 return false;
@@ -170,8 +165,8 @@ impl<'a> PlayerValidator<'a> {
             self.resolve_name_color(data_ptr, player_id, string_layout, &is_valid_player_name);
 
         let mut pc = player_control_ptr;
-        if pc == 0 || !self.reader.process().is_valid_pointer(pc) {
-            if data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
+        if (pc == 0 || !self.reader.process().is_valid_pointer(pc))
+            && data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
                 for obj_off in [0x58_u64, 0x5C, 0x54, 0x50, 0x48] {
                     if let Ok(p) = self.reader.read_pointer(data_ptr + obj_off) {
                         if p != 0 && self.reader.process().is_valid_pointer(p) {
@@ -181,7 +176,6 @@ impl<'a> PlayerValidator<'a> {
                     }
                 }
             }
-        }
 
         let position =
             self.read_player_position(pc, data_ptr, cnt.net_transform, cnt.last_position);
@@ -225,7 +219,7 @@ impl<'a> PlayerValidator<'a> {
             }
         }
 
-        // Read tasks progress (completed / total)
+        // task progress
         let (tasks_completed, tasks_total) = self.read_player_tasks(data_ptr);
 
         Ok(PlayerSnapshot {
@@ -250,20 +244,21 @@ impl<'a> PlayerValidator<'a> {
         })
     }
 
-    /// Read completed & total task counts from NetworkedPlayerInfo.Tasks (List<PlayerTaskInfo>)
+    // read player task list
     fn read_player_tasks(&self, data_ptr: u64) -> (u8, u8) {
         if data_ptr == 0 {
             return (0, 0);
         }
 
-        for list_off in [0x44_u64, 0x40, 0x3C, 0x48] {
+        // NetworkedPlayerInfo.Tasks fallback offsets
+        for list_off in [0x50_u64, 0x4C, 0x48, 0x44, 0x40, 0x3C] {
             let list_ptr = match self.reader.read_pointer(data_ptr + list_off) {
                 Ok(p) if p != 0 && self.reader.process().is_valid_pointer(p) => p,
                 _ => continue,
             };
 
             let size = match self.reader.read_i32(list_ptr + 0x0C) {
-                Ok(s) if s > 0 && s <= 15 => s as usize,
+                Ok(s) if s > 0 && s <= 30 => s as usize,
                 _ => continue,
             };
 
@@ -282,12 +277,23 @@ impl<'a> PlayerValidator<'a> {
                 };
 
                 total += 1;
-                // Check Complete (bool) at +0x0C, +0x10, +0x14
-                for comp_off in [0x0C_u64, 0x10, 0x14, 0x18] {
-                    if let Ok(1) = self.reader.read_u8(task_ptr + comp_off) {
-                        completed += 1;
-                        break;
+                // TaskInfo.Complete (bool) is at +0x0D in v18 (fallback: +0x0C, +0x0E, +0x10, +0x14)
+                let is_comp = match self.reader.read_u8(task_ptr + 0x0D) {
+                    Ok(1) => true,
+                    _ => {
+                        let mut found = false;
+                        for comp_off in [0x0C_u64, 0x0E, 0x10, 0x14] {
+                            if let Ok(1) = self.reader.read_u8(task_ptr + comp_off) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        found
                     }
+                };
+
+                if is_comp {
+                    completed += 1;
                 }
             }
 
@@ -312,8 +318,8 @@ impl<'a> PlayerValidator<'a> {
         };
 
         let mut pc = player_control_ptr;
-        if pc == 0 || !self.reader.process().is_valid_pointer(pc) {
-            if data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
+        if (pc == 0 || !self.reader.process().is_valid_pointer(pc))
+            && data_ptr != 0 && self.reader.process().is_valid_pointer(data_ptr) {
                 for obj_off in [0x58_u64, 0x5C, 0x54, 0x50, 0x48] {
                     if let Ok(p) = self.reader.read_pointer(data_ptr + obj_off) {
                         if p != 0 && self.reader.process().is_valid_pointer(p) {
@@ -323,14 +329,11 @@ impl<'a> PlayerValidator<'a> {
                     }
                 }
             }
-        }
 
         if pc != 0 && self.reader.process().is_valid_pointer(pc) {
-            // ── CustomNetworkTransform at PlayerControl.NetTransform (0x98) ──
             for nt_off in [net_transform_off, 0x98, 0x94, 0x9C, 0xA0] {
                 if let Ok(nt_ptr) = self.reader.read_pointer(pc + nt_off) {
                     if nt_ptr != 0 && self.reader.process().is_valid_pointer(nt_ptr) {
-                        // 1. Check lastPosition (+0x44)
                         if let (Ok(x), Ok(y)) = (
                             self.reader.read_f32(nt_ptr + last_pos_off),
                             self.reader.read_f32(nt_ptr + last_pos_off + 4),
@@ -340,10 +343,18 @@ impl<'a> PlayerValidator<'a> {
                             }
                         }
 
-                        // 2. Check lastPosSent (+0x4C)
                         if let (Ok(x), Ok(y)) = (
                             self.reader.read_f32(nt_ptr + 0x4C),
                             self.reader.read_f32(nt_ptr + 0x50),
+                        ) {
+                            if is_valid_coord(x, y) {
+                                return (x, y);
+                            }
+                        }
+
+                        if let (Ok(x), Ok(y)) = (
+                            self.reader.read_f32(nt_ptr + 0x54),
+                            self.reader.read_f32(nt_ptr + 0x58),
                         ) {
                             if is_valid_coord(x, y) {
                                 return (x, y);
@@ -358,7 +369,7 @@ impl<'a> PlayerValidator<'a> {
                 || self.reader.read_u8(pc + 0xB9).unwrap_or(0) == 1;
             let player_id = self.reader.read_u8(pc + 0x28).unwrap_or(255);
 
-            if is_dummy || (player_id >= 1 && player_id <= 6) {
+            if is_dummy || (1..=6).contains(&player_id) {
                 // Freeplay Skeld fixed Dummy spawn positions
                 match player_id {
                     1 => return (9.2, 1.0),     // Dummy 1 (Red) - Weapons

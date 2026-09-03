@@ -12,7 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use winit::window::Window;
 
-/// Apply layered transparency, topmost z-order, taskbar hiding, and capture exclusion.
+// make window transparent, topmost and hide from obs/recording
 pub fn apply_stream_proof_styles(window: &Window) {
     let hwnd = window_hwnd(window);
 
@@ -45,7 +45,7 @@ pub fn apply_stream_proof_styles(window: &Window) {
     }
 }
 
-/// Dynamically toggle Stream-Proof capture exclusion (ON/OFF)
+// toggle stream proof capture exclusion
 pub fn set_stream_proof(window: &Window, enabled: bool) {
     let hwnd = window_hwnd(window);
     let affinity = if enabled {
@@ -58,7 +58,7 @@ pub fn set_stream_proof(window: &Window, enabled: bool) {
     }
 }
 
-/// Dynamically show or hide the overlay window on keybind.
+// toggle window visiblity
 pub fn set_window_visible(window: &Window, visible: bool) {
     let hwnd = window_hwnd(window);
     unsafe {
@@ -89,13 +89,15 @@ impl SystemTray {
         let hwnd = window_hwnd(window);
         unsafe {
             let icon = LoadIconW(None, IDI_APPLICATION).ok()?;
-            let mut nid = NOTIFYICONDATAW::default();
-            nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-            nid.hWnd = hwnd;
-            nid.uID = 1001;
-            nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
-            nid.uCallbackMessage = 0x0400 + 1; // WM_USER + 1
-            nid.hIcon = icon;
+            let mut nid = NOTIFYICONDATAW {
+                cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+                hWnd: hwnd,
+                uID: 1001,
+                uFlags: NIF_ICON | NIF_TIP | NIF_MESSAGE,
+                uCallbackMessage: 0x0400 + 1,
+                hIcon: icon,
+                ..Default::default()
+            };
 
             let tip = "Among Us Overlay\0".encode_utf16().collect::<Vec<_>>();
             let len = tip.len().min(nid.szTip.len());

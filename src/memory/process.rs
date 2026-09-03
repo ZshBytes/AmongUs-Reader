@@ -123,7 +123,7 @@ impl ProcessHandle {
         }
 
         let align = self.pointer_size as u64;
-        if align > 0 && address % align != 0 {
+        if align > 0 && !address.is_multiple_of(align) {
             return false;
         }
 
@@ -176,11 +176,9 @@ impl ProcessHandle {
             if mbi.State == MEM_COMMIT
                 && (mbi.Protect & PAGE_NOACCESS).0 == 0
                 && (mbi.Protect & PAGE_GUARD).0 == 0
-            {
-                if region_size >= 4096 && region_size <= 64 * 1024 * 1024 {
+                && (4096..=64 * 1024 * 1024).contains(&region_size) {
                     regions.push((base, region_size));
                 }
-            }
 
             let next_addr = base.saturating_add(region_size as u64);
             if next_addr <= address {
@@ -251,7 +249,7 @@ fn find_process_id(executable_name: &str) -> Option<u32> {
                     )
                     .to_ascii_lowercase();
 
-                    // Log any process that mentions "among" so we can see the real name.
+                    // keep track of process names with 'among'
                     if name.contains("among") {
                         found_among.push(format!("{}({})", name, entry.th32ProcessID));
                     }

@@ -45,8 +45,7 @@ pub struct Il2CppConfig {
 impl Il2CppConfig {
     pub fn static_fields_offset(&self, pointer_size: u8) -> u64 {
         if pointer_size == 4 && self.static_fields == 0xB8 {
-            // A 32-bit IL2CPP build still uses 0x5C for Il2CppClass.static_fields,
-            // even though the x64 default is 0xB8.
+            // 32-bit il2cpp uses 0x5C for static_fields instead of 0xB8
             return 0x5C;
         }
 
@@ -67,10 +66,22 @@ pub struct StaticPointers {
     pub game_data_type_info: u64,
     #[serde(default = "default_game_options_manager_type_info")]
     pub game_options_manager_type_info: u64,
+    #[serde(default = "default_meeting_hud_type_info")]
+    pub meeting_hud_type_info: u64,
+    #[serde(default = "default_game_code_type_info")]
+    pub game_code_type_info: u64,
 }
 
 fn default_game_options_manager_type_info() -> u64 {
-    0x2AE9C7C
+    0x2AE987C
+}
+
+fn default_meeting_hud_type_info() -> u64 {
+    0x2AC8E84
+}
+
+fn default_game_code_type_info() -> u64 {
+    0x2AE8F80
 }
 
 #[allow(dead_code)]
@@ -81,6 +92,10 @@ pub struct StaticFields {
     pub game_data_instance: u64,
     #[serde(default)]
     pub game_options_manager_instance: u64,
+    #[serde(default)]
+    pub meeting_hud_instance: u64,
+    #[serde(default)]
+    pub game_code_v2: u64,
 }
 
 #[allow(dead_code)]
@@ -202,8 +217,7 @@ pub struct ListLayout {
 
 impl ListLayout {
     pub fn items_offset(&self, pointer_size: u8) -> u64 {
-        // IL2CPP object pointers include the object header before field data.
-        // On x86 the list object header is 8 bytes, so _items is at 0x8.
+        // on 32-bit il2cpp list _items is at 0x8 instead of 0x10
         if pointer_size == 4 && self.items == 0x10 {
             0x8
         } else if self.items != 0 {
@@ -216,7 +230,7 @@ impl ListLayout {
     }
 
     pub fn size_offset(&self, pointer_size: u8) -> u64 {
-        // On x86 the list _size field lives after the object header and the _items pointer.
+        // on 32-bit list _size is at 0xC instead of 0x18
         if pointer_size == 4 && self.size == 0x18 {
             0xC
         } else if self.size != 0 {
@@ -395,85 +409,29 @@ pub fn parse_vk_key(name: &str) -> i32 {
 }
 
 fn discover_dump_sources(base: &Path) -> DumpConfig {
-    let mut search_dirs = Vec::new();
-    let mut pending_dirs = std::collections::VecDeque::new();
-    pending_dirs.push_back(base.to_path_buf());
-    pending_dirs.push_back(base.join("config"));
-    pending_dirs.push_back(base.join("src"));
-    pending_dirs.push_back(base.join("src").join("config"));
-    if let Ok(cwd) = std::env::current_dir() {
-        if cwd != base {
-            pending_dirs.push_back(cwd);
-        }
-    }
-    if let Some(parent) = base.parent() {
-        pending_dirs.push_back(parent.to_path_buf());
-    }
+    let search_dirs = [
+        base.to_path_buf(),
+        base.join("config"),
+        base.join("src"),
+        base.join("src").join("config"),
+        Path::new(".").to_path_buf(),
+        Path::new("config").to_path_buf(),
+    ];
 
-    let mut visited = HashSet::new();
-    while let Some(dir) = pending_dirs.pop_front() {
-        if !visited.insert(dir.clone()) {
-            continue;
-        }
-        if !dir.exists() {
-            continue;
-        }
-
-        search_dirs.push(dir.clone());
-
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if let Ok(file_type) = entry.file_type() {
-                    if file_type.is_dir() {
-                        pending_dirs.push_back(entry.path());
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(game_dir) = std::env::var("AMONG_US_GAME_DIR") {
-        search_dirs.push(Path::new(&game_dir).to_path_buf());
-    }
-
-    let drives = ["C", "D", "E", "F", "G", "H"];
-    for drive in drives {
-        let steam_paths = [
-            format!(r"{drive}:\Steam\steamapps\common\Among Us"),
-            format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\Among Us"),
-            format!(r"{drive}:\Program Files\Steam\steamapps\common\Among Us"),
-            format!(r"{drive}:\SteamLibrary\steamapps\common\Among Us"),
-            format!(r"{drive}:\Epic Games\AmongUs"),
-            format!(r"{drive}:\XboxGames\Among Us\Content"),
-        ];
-        for path in steam_paths {
-            search_dirs.push(Path::new(&path).to_path_buf());
-        }
-    }
-
-    let pick = |filename: &str| -> Option<String> {
+    let pick_file = |name: &str| -> Option<String> {
         for dir in &search_dirs {
-            let candidate = dir.join(filename);
-            if candidate.exists() {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
                 return Some(candidate.to_string_lossy().into_owned());
             }
         }
         None
     };
 
-    let pick_any = |names: &[&str]| -> Option<String> {
-        for name in names {
-            if let Some(path) = pick(name) {
-                return Some(path);
-            }
-        }
-        None
-    };
-
     DumpConfig {
-        script_json: pick_any(&["script.json", "ScriptingAssemblies.json"]),
-        il2cpp_h: pick_any(&["il2cpp.h"]),
-        dump_cs: pick_any(&["dump.cs"]),
+        script_json: pick_file("script.json").or_else(|| pick_file("ScriptingAssemblies.json")),
+        il2cpp_h: pick_file("il2cpp.h"),
+        dump_cs: pick_file("dump.cs"),
     }
 }
 
@@ -521,17 +479,19 @@ impl Offsets {
                 .map(|p| super::dump::resolve_dump_path(base, p)),
         };
 
-        if dump.script_json.is_none() && dump.il2cpp_h.is_none() && dump.dump_cs.is_none() {
-            dump = discover_dump_sources(base);
-        }
-
-        if dump.script_json.is_some() || dump.il2cpp_h.is_some() || dump.dump_cs.is_some() {
-            notes.extend(offsets.apply_dump_sources(&dump)?);
+        let has_explicit_dump = dump.script_json.is_some() || dump.il2cpp_h.is_some() || dump.dump_cs.is_some();
+        if has_explicit_dump || !offsets.offsets_configured() {
+            if !has_explicit_dump {
+                dump = discover_dump_sources(base);
+            }
+            if dump.script_json.is_some() || dump.il2cpp_h.is_some() || dump.dump_cs.is_some() {
+                notes.extend(offsets.apply_dump_sources(&dump)?);
+            }
         }
 
         if !offsets.offsets_configured() {
             notes.push(
-                "TypeInfo offsets still missing — place script.json / il2cpp.h / dump.cs next to offsets.toml or add [dump] paths"
+                "TypeInfo offsets missing. Place script.json/dump.cs next to offsets.toml or configure manually."
                     .into(),
             );
         } else {

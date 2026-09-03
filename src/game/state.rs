@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 
 use crate::game::player::PlayerSnapshot;
 use crate::game::role::color_name;
-use crate::game::scanner::ScanSnapshot;
+use crate::game::scanner::{LobbyRulesSnapshot, ScanSnapshot};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct KillEvent {
@@ -50,6 +50,7 @@ pub struct OverlayStatus {
     pub connected: bool,
     pub in_active_match: bool,
     pub game_state: i32,
+    pub room_code: String,
     pub players: Vec<PlayerSnapshot>,
     pub kill_events: Vec<KillEvent>,
     pub disguise_events: Vec<DisguiseEvent>,
@@ -59,6 +60,7 @@ pub struct OverlayStatus {
     pub status_message: String,
     pub last_update_ms: u64,
     pub stream_proof: bool,
+    pub lobby_rules: Option<LobbyRulesSnapshot>,
 }
 
 impl Default for OverlayStatus {
@@ -67,6 +69,7 @@ impl Default for OverlayStatus {
             connected: false,
             in_active_match: false,
             game_state: -1,
+            room_code: String::new(),
             players: Vec::new(),
             kill_events: Vec::new(),
             disguise_events: Vec::new(),
@@ -76,6 +79,7 @@ impl Default for OverlayStatus {
             status_message: String::new(),
             last_update_ms: 0,
             stream_proof: true,
+            lobby_rules: None,
         }
     }
 }
@@ -257,21 +261,22 @@ impl SharedGameState {
                         }
                     });
 
-                    if (!prev_ss || prev_target.is_none()) && target_opt.is_some() {
-                        let tname = target_opt.unwrap();
-                        if tname != curr.name {
-                            let msg = format!("{} shapeshifted into {}", curr.name, tname);
-                            if state.log_config.log_kills {
-                                println!("[SHAPESHIFT] {msg}");
-                            }
-                            let event = DisguiseEvent {
-                                message: msg,
-                                morpher_name: curr.name.clone(),
-                                target_name: tname.to_string(),
-                            };
-                            state.disguise_events.insert(0, event);
-                            if state.disguise_events.len() > 300 {
-                                state.disguise_events.truncate(300);
+                    if !prev_ss || prev_target.is_none() {
+                        if let Some(tname) = target_opt {
+                            if tname != curr.name {
+                                let msg = format!("{} shapeshifted into {}", curr.name, tname);
+                                if state.log_config.log_kills {
+                                    println!("[SHAPESHIFT] {msg}");
+                                }
+                                let event = DisguiseEvent {
+                                    message: msg,
+                                    morpher_name: curr.name.clone(),
+                                    target_name: tname.to_string(),
+                                };
+                                state.disguise_events.insert(0, event);
+                                if state.disguise_events.len() > 300 {
+                                    state.disguise_events.truncate(300);
+                                }
                             }
                         }
                     }
@@ -339,22 +344,11 @@ impl SharedGameState {
         state.connected = snapshot.connected;
         state.in_active_match = snapshot.in_active_match;
         state.game_state = snapshot.game_state;
-        
-        let mut players = snapshot.players.clone();
-        let now = now_ms();
-        if snapshot.game_state == 2 {
-            let base_reset = state.last_kill_time.unwrap_or(state.last_update_ms);
-            let elapsed = (now.saturating_sub(base_reset)) as f32 / 1000.0;
-            let cooldown = (25.0_f32 - elapsed).max(0.0);
-            for p in &mut players {
-                if p.role.is_impostor_team() && !p.is_dead {
-                    p.kill_cooldown = Some(cooldown);
-                }
-            }
-        }
-        state.players = players;
+        state.room_code = snapshot.room_code.clone();
+        state.players = snapshot.players.clone();
         state.status_message = snapshot.status_message.clone();
-        state.last_update_ms = now;
+        state.lobby_rules = snapshot.lobby_rules.clone();
+        state.last_update_ms = now_ms();
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -432,6 +426,9 @@ impl SharedGameState {
 
         let mut lines = Vec::new();
         lines.push(format!("Match Log ({now_s})"));
+        if !state.room_code.is_empty() {
+            lines.push(format!("Room Code: {}", state.room_code));
+        }
         lines.push(String::new());
         lines.push("Player Data:".into());
 
@@ -446,7 +443,7 @@ impl SharedGameState {
                 "- [{}] {} ({}, {}){}",
                 color_name(p.color_id),
                 p.name,
-                p.role.to_string(),
+                p.role,
                 status,
                 fc
             ));
@@ -459,6 +456,45 @@ impl SharedGameState {
         } else {
             for event in state.kill_events.iter().rev() {
                 lines.push(format!("- {}", event.message));
+            }
+        }
+
+        if let Some(rules) = &state.lobby_rules {
+            lines.push(String::new());
+            lines.push("Lobby & Game Rules:".into());
+            lines.push(format!("- Map: {}", rules.map_name()));
+            lines.push(format!("- Max Players: {}", rules.max_players));
+            lines.push(format!("- Player Speed: {:.2}x", rules.player_speed));
+            lines.push(format!("- Crew Vision: {:.2}x | Impostor Vision: {:.2}x", rules.crew_light, rules.impostor_light));
+            lines.push(format!("- Kill Distance: {} | Kill Cooldown: {:.1}s", rules.kill_distance_str(), rules.kill_cooldown));
+            lines.push(format!("- Discussion Time: {}s | Voting Time: {}s", rules.discussion_time, rules.voting_time));
+            lines.push(format!("- Emergency Meetings: {} ({}s CD)", rules.num_emergency_meetings, rules.emergency_cooldown));
+            lines.push(format!("- Confirm Ejects: {} | Anonymous Votes: {}", if rules.confirm_impostor { "ON" } else { "OFF" }, if rules.anonymous_votes { "ON" } else { "OFF" }));
+            let total_tasks = rules.num_common_tasks + rules.num_long_tasks + rules.num_short_tasks;
+            lines.push(format!("- Tasks: {} Common, {} Long, {} Short (Total {})", rules.num_common_tasks, rules.num_long_tasks, rules.num_short_tasks, total_tasks));
+            lines.push(format!("- Visual Tasks: {} | Task Bar Updates: {}", if rules.visual_tasks { "ON" } else { "OFF" }, rules.task_bar_mode_str()));
+
+            if !rules.role_settings.is_empty() {
+                lines.push(String::new());
+                lines.push("Role Chances & Settings:".into());
+                let mut crew_roles = Vec::new();
+                let mut imp_roles = Vec::new();
+                for r in &rules.role_settings {
+                    if r.is_impostor_role {
+                        imp_roles.push(r);
+                    } else {
+                        crew_roles.push(r);
+                    }
+                }
+                for r in crew_roles.iter().chain(imp_roles.iter()) {
+                    let team = if r.is_impostor_role { "Impostor" } else { "Crewmate" };
+                    let details_str = if r.details.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" | {}", r.details.join(", "))
+                    };
+                    lines.push(format!("- [{}] {}: Count {} | Chance {}%{}", team, r.role_name, r.count, r.chance, details_str));
+                }
             }
         }
 
